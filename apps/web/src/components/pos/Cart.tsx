@@ -4,6 +4,7 @@ import { CreditCard, QrCode, Banknote, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { DiscountBar } from "@/components/pos/DiscountBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
+import { formatVatPercent } from "@/lib/format";
 import { computeDiscountCents } from "@/lib/discounts";
 import type { CartItem, PaymentMethod, Discount } from "@/types";
 
@@ -71,7 +72,7 @@ export function Cart({
                 </div>
               )}
               <div className="text-[11px] text-gray-400">
-                {fmt(lineUnitGross(item))} · VAT {Number(item.product.taxRate?.rate) * 100}%
+                {fmt(lineUnitGross(item))} · VAT {formatVatPercent(item.product.taxRate?.rate)}
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
