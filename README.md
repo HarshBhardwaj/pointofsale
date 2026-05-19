@@ -27,6 +27,32 @@ A production-grade Point of Sale system built for food trucks and multi-location
 └── docs/             # Architecture docs
 ```
 
+## Docker (self-hosted server)
+
+Run the full stack (PostgreSQL, API, and web) with Docker Compose:
+
+```bash
+cp .env.docker.example .env
+# Edit .env — set YOUR_SERVER_IP, secrets, and POSTGRES_PASSWORD
+
+docker compose up -d --build
+```
+
+| Service | URL |
+|---|---|
+| Web (POS) | http://localhost:3000 |
+| API | http://localhost:3001 |
+| API health | http://localhost:3001/health |
+
+On first deploy, set `RUN_DB_SEED=true` in `.env` to load demo data, then set it back to `false`.
+
+**Production notes:**
+- Set `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, and `API_URL` to your real domain or server IP (browsers must reach the API at the URL baked into the web build).
+- Rebuild the web image after changing any `NEXT_PUBLIC_*` variable: `docker compose up -d --build web`
+- Do not leave Clerk or Stripe keys blank in `.env` (remove the line instead); empty values break the web image build
+- For Stripe webhooks, expose port 3001 (or put a reverse proxy in front) and point webhooks to `https://your-domain/webhooks/stripe`
+- Commit Prisma migrations (`packages/db/prisma/migrations`) for production; without them, the API container uses `prisma db push` on startup
+
 ## Quick start
 
 ### Prerequisites
