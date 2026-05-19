@@ -7,16 +7,17 @@ import { createTerminalPaymentIntent, collectPaymentOnReader } from "../services
 import { createPayPalOrder } from "../services/paypal";
 import { startFiskalyTransaction } from "../services/fiskaly";
 import { logger } from "../lib/logger";
-import { markOrderPaid } from "../services/order";
+import { getOrderBalance, finalizeOrderIfFullyPaid } from "../lib/orderBalance";
 
 export const paymentsRouter = Router();
 
 // ── POST /api/payments/stripe/intent ── create Terminal PaymentIntent ───
 paymentsRouter.post("/stripe/intent", async (req: Request, res: Response) => {
   try {
-    const { orderId, readerId } = z.object({
+    const { orderId, readerId, amountCents: requestedAmount } = z.object({
       orderId: z.string(),
       readerId: z.string(),
+      amountCents: z.number().int().positive().optional(),
     }).parse(req.body);
 
     const order = await prisma.order.findUnique({
@@ -28,10 +29,17 @@ paymentsRouter.post("/stripe/intent", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Order is not payable" });
     }
 
-    const idempotencyKey = `stripe-intent-${orderId}`;
+    const balance = await getOrderBalance(orderId);
+    if (!balance) return res.status(404).json({ error: "Order not found" });
+    const amountCents = requestedAmount ?? balance.dueCents;
+    if (amountCents > balance.dueCents) {
+      return res.status(400).json({ error: "Amount exceeds balance due" });
+    }
+
+    const idempotencyKey = `stripe-intent-${orderId}-${uuidv4()}`;
 
     const intent = await createTerminalPaymentIntent({
-      amountCents: order.totalCents,
+      amountCents,
       orderId,
       locationId: order.locationId,
       idempotencyKey,
@@ -51,13 +59,12 @@ paymentsRouter.post("/stripe/intent", async (req: Request, res: Response) => {
         providerPaymentId: intent.id,
         method: "CARD_PRESENT",
         status: "PROCESSING",
-        amountCents: order.totalCents,
+        amountCents,
         stripeReaderId: readerId,
         idempotencyKey,
       },
     });
 
-    // Update order status
     await prisma.order.update({
       where: { id: orderId },
       data: { status: "AWAITING_PAYMENT" },
@@ -84,14 +91,21 @@ paymentsRouter.post("/stripe/intent", async (req: Request, res: Response) => {
 // ── POST /api/payments/paypal/create ── create PayPal order for QR ──────
 paymentsRouter.post("/paypal/create", async (req: Request, res: Response) => {
   try {
-    const { orderId } = z.object({ orderId: z.string() }).parse(req.body);
+    const { orderId, amountCents: requestedAmount } = z.object({
+      orderId: z.string(),
+      amountCents: z.number().int().positive().optional(),
+    }).parse(req.body);
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) return res.status(404).json({ error: "Order not found" });
+    const balance = await getOrderBalance(orderId);
+    if (!balance) return res.status(404).json({ error: "Order not found" });
+    const amountCents = requestedAmount ?? balance.dueCents;
+    if (amountCents > balance.dueCents) {
+      return res.status(400).json({ error: "Amount exceeds balance due" });
+    }
 
     const baseUrl = process.env.API_URL || "http://localhost:3001";
     const paypalOrder = await createPayPalOrder({
-      amountCents: order.totalCents,
+      amountCents,
       orderId,
       returnUrl: `${baseUrl}/api/payments/paypal/capture?token={checkout_session_id}&orderId=${orderId}`,
       cancelUrl: `${baseUrl}/api/payments/paypal/cancel?orderId=${orderId}`,
@@ -114,8 +128,8 @@ paymentsRouter.post("/paypal/create", async (req: Request, res: Response) => {
         providerPaymentId: paypalOrder.id,
         method: "PAYPAL_QR",
         status: "PENDING",
-        amountCents: order.totalCents,
-        idempotencyKey: `paypal-${orderId}`,
+        amountCents,
+        idempotencyKey: `paypal-${orderId}-${uuidv4()}`,
         metadata: { paypalOrderId: paypalOrder.id },
       },
     });
@@ -138,9 +152,17 @@ paymentsRouter.post("/paypal/create", async (req: Request, res: Response) => {
 // ── POST /api/payments/cash ── record a cash payment ────────────────────
 paymentsRouter.post("/cash", async (req: Request, res: Response) => {
   try {
-    const { orderId } = z.object({ orderId: z.string() }).parse(req.body);
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) return res.status(404).json({ error: "Order not found" });
+    const { orderId, amountCents: requestedAmount } = z.object({
+      orderId: z.string(),
+      amountCents: z.number().int().positive().optional(),
+    }).parse(req.body);
+
+    const balance = await getOrderBalance(orderId);
+    if (!balance) return res.status(404).json({ error: "Order not found" });
+    const amountCents = requestedAmount ?? balance.dueCents;
+    if (amountCents > balance.dueCents) {
+      return res.status(400).json({ error: "Amount exceeds balance due" });
+    }
 
     await prisma.payment.create({
       data: {
@@ -148,14 +170,22 @@ paymentsRouter.post("/cash", async (req: Request, res: Response) => {
         provider: "CASH",
         method: "CASH",
         status: "SUCCEEDED",
-        amountCents: order.totalCents,
-        idempotencyKey: `cash-${orderId}-${Date.now()}`,
+        amountCents,
+        idempotencyKey: `cash-${orderId}-${uuidv4()}`,
       },
     });
-    await markOrderPaid(orderId);
 
-    logger.info("Cash payment recorded", { orderId });
-    res.json({ success: true });
+    await finalizeOrderIfFullyPaid(orderId);
+    const updated = await getOrderBalance(orderId);
+    if (updated && updated.dueCents > 0) {
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { status: "AWAITING_PAYMENT" },
+      });
+    }
+
+    logger.info("Cash payment recorded", { orderId, amountCents });
+    res.json({ success: true, ...updated });
   } catch (err) {
     res.status(500).json({ error: "Failed to record cash payment" });
   }

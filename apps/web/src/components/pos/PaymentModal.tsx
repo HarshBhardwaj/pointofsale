@@ -9,6 +9,7 @@ interface Props {
   method: PaymentMethod;
   orderId: string;
   totalCents: number;
+  amountCents?: number;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -17,7 +18,8 @@ type Phase = "idle" | "processing" | "ok" | "fail";
 
 const QR_PATTERN = [1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,1,0,1,1,0,1,0,0,1,0,0,0,1,0,0,1,0,1,1,1,1];
 
-export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }: Props) {
+export function PaymentModal({ method, orderId, totalCents, amountCents, onClose, onSuccess }: Props) {
+  const chargeCents = amountCents ?? totalCents;
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState("");
   const [qrUrl, setQrUrl] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }
 
   useEffect(() => {
     if (method === "paypal") {
-      api.post("/payments/paypal/create", { orderId })
+      api.post("/payments/paypal/create", { orderId, amountCents: chargeCents })
         .then((r) => { setQrUrl(r.data.approvalUrl); })
         .catch(() => { setPhase("fail"); setMessage("Failed to create PayPal order"); });
     }
@@ -43,7 +45,7 @@ export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }
     try {
       if (method === "card") {
         setMessage("Waiting for card…");
-        await api.post("/payments/stripe/intent", { orderId, readerId: "tmr_simulated" });
+        await api.post("/payments/stripe/intent", { orderId, readerId: "tmr_simulated", amountCents: chargeCents });
         setPhase("ok");
         setMessage("Payment approved — receipt ready");
         setTimeout(onSuccess, 1200);
@@ -54,7 +56,7 @@ export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }
         setMessage("PayPal payment captured — receipt ready");
         setTimeout(onSuccess, 1200);
       } else if (method === "cash") {
-        await api.post("/payments/cash", { orderId });
+        await api.post("/payments/cash", { orderId, amountCents: chargeCents });
         setPhase("ok");
         setMessage("Cash confirmed — receipt issued");
         setTimeout(onSuccess, 1000);
@@ -79,7 +81,10 @@ export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <p className="text-xs text-gray-500 mb-4">{cfg[method].sub}</p>
-        <div className="text-3xl font-medium text-center my-4">{fmt(totalCents)}</div>
+        <div className="text-3xl font-medium text-center my-4">{fmt(chargeCents)}</div>
+        {chargeCents !== totalCents && (
+          <p className="text-xs text-center text-gray-500 -mt-2 mb-2">of {fmt(totalCents)} total</p>
+        )}
 
         {method === "paypal" && (
           <div className="flex flex-col items-center mb-4">

@@ -19,6 +19,7 @@ interface Props {
   onUpdateQty: (lineId: string, qty: number) => void;
   onClear: () => void;
   onCharge: (method: PaymentMethod) => void;
+  onSplitPay?: () => void;
   onHoldTab?: () => void;
   onRecallTab?: (orderId: string) => void;
   openTabLabel?: string | null;
@@ -34,6 +35,7 @@ export function Cart({
   onUpdateQty,
   onClear,
   onCharge,
+  onSplitPay,
   onHoldTab,
   onRecallTab,
   openTabLabel,
@@ -122,16 +124,28 @@ export function Cart({
         <div className="flex justify-between text-base font-medium mb-3 pt-2 border-t border-gray-100">
           <span>Total</span><span>{fmt(grandTotal)}</span>
         </div>
-        {onHoldTab && (
-          <button
-            type="button"
-            onClick={onHoldTab}
-            disabled={!hasItems || !isOnline}
-            className="w-full mb-2 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
-          >
-            <Bookmark size={14} /> Hold tab
-          </button>
-        )}
+        <div className="flex gap-1.5 mb-2">
+          {onHoldTab && (
+            <button
+              type="button"
+              onClick={onHoldTab}
+              disabled={!hasItems || !isOnline}
+              className="flex-1 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
+            >
+              <Bookmark size={14} /> Hold tab
+            </button>
+          )}
+          {onSplitPay && (
+            <button
+              type="button"
+              onClick={onSplitPay}
+              disabled={!hasItems || !isOnline}
+              className="flex-1 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
+            >
+              Split pay
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-1.5">
           <button onClick={() => onCharge("card")} disabled={!hasItems || !isOnline}
             title={!isOnline ? "Card requires internet" : undefined}

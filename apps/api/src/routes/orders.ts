@@ -90,6 +90,18 @@ ordersRouter.get("/", async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/orders/:id/balance ── paid vs due ─────────────────────────
+ordersRouter.get("/:id/balance", async (req: Request, res: Response) => {
+  try {
+    const { getOrderBalance } = await import("../lib/orderBalance");
+    const balance = await getOrderBalance(req.params.id);
+    if (!balance) return res.status(404).json({ error: "Order not found" });
+    res.json(balance);
+  } catch {
+    res.status(500).json({ error: "Failed to get balance" });
+  }
+});
+
 // ── GET /api/orders/:id ── single order ──────────────────────────────────
 ordersRouter.get("/:id", async (req: Request, res: Response) => {
   try {

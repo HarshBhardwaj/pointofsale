@@ -5,6 +5,8 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/pay(.*)",      // QR payment page is public (customers scan it)
+  "/display(.*)", // Customer-facing second screen
+  "/kitchen(.*)", // Kitchen display (tablet at pass)
   "/health",
 ]);
 
