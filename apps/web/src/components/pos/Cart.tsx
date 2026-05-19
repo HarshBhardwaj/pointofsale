@@ -8,6 +8,7 @@ import { TipBar } from "@/components/pos/TipBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
 import { formatVatPercent } from "@/lib/format";
 import { computeDiscountCents } from "@/lib/discounts";
+import { computeTipCents } from "@/lib/tips";
 import type { CartItem, PaymentMethod, Discount } from "@/types";
 
 interface Props {
@@ -24,8 +25,8 @@ interface Props {
   onHoldTab?: () => void;
   onRecallTab?: (orderId: string) => void;
   openTabLabel?: string | null;
-  tipCents?: number;
-  onTipChange?: (cents: number) => void;
+  tipPct?: number;
+  onTipChange?: (pct: number) => void;
 }
 
 export function Cart({
@@ -42,12 +43,14 @@ export function Cart({
   onHoldTab,
   onRecallTab,
   openTabLabel,
-  tipCents = 0,
+  tipPct = 0,
   onTipChange,
 }: Props) {
   const { n7, v7, n19, v19, totalQty, grandTotal: subtotalGross } = cartVatBreakdown(items);
   const discountCents = selectedDiscount ? computeDiscountCents(subtotalGross, selectedDiscount) : 0;
-  const grandTotal = subtotalGross - discountCents + tipCents;
+  const subtotalAfterDiscount = Math.round(subtotalGross - discountCents);
+  const tipCents = computeTipCents(subtotalAfterDiscount, tipPct);
+  const grandTotal = subtotalAfterDiscount + tipCents;
   const hasItems = items.length > 0;
   const fmt = (cents: number) => `€${(cents / 100).toFixed(2)}`;
 
@@ -71,7 +74,7 @@ export function Cart({
       </div>
 
       {hasItems && onTipChange && (
-        <TipBar subtotalCents={subtotalGross - discountCents} tipCents={tipCents} onTipChange={onTipChange} />
+        <TipBar subtotalCents={subtotalAfterDiscount} tipPct={tipPct} onTipChange={onTipChange} />
       )}
       {hasItems && (
         <DiscountBar
@@ -127,6 +130,12 @@ export function Cart({
           <div className="flex justify-between text-xs text-green-700 mb-1">
             <span>{selectedDiscount.name}</span>
             <span>−{fmt(discountCents)}</span>
+          </div>
+        )}
+        {tipCents > 0 && (
+          <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <span>Tip ({tipPct}%)</span>
+            <span>{fmt(tipCents)}</span>
           </div>
         )}
         <div className="flex justify-between text-base font-medium mb-3 pt-2 border-t border-gray-100">

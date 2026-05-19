@@ -37,6 +37,7 @@ const UpdateOpenOrderSchema = z.object({
   })),
   discountId: z.string().optional().nullable(),
   tabName: z.string().optional(),
+  tipCents: z.number().int().min(0).optional(),
 });
 
 function splitGross(lineGrossCents: number, rate: number) {
@@ -269,6 +270,9 @@ ordersRouter.patch("/:id", async (req: Request, res: Response) => {
       discountType = null;
     }
 
+    const tipCents = body.tipCents ?? existing.tipCents;
+    finalTotal += tipCents;
+
     await prisma.orderItem.deleteMany({ where: { orderId: req.params.id } });
     const order = await prisma.order.update({
       where: { id: req.params.id },
@@ -276,6 +280,7 @@ ordersRouter.patch("/:id", async (req: Request, res: Response) => {
         subtotalCents: finalSubtotal,
         taxCents: finalTax,
         totalCents: finalTotal,
+        tipCents,
         discountId,
         discountName,
         discountType,

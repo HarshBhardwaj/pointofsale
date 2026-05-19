@@ -15,6 +15,7 @@ interface DisplayState {
   lines: DisplayLine[];
   subtotalCents: number;
   discountCents: number;
+  tipCents?: number;
   totalCents: number;
   updatedAt: string;
 }
@@ -62,6 +63,12 @@ export default function CustomerDisplayPage() {
             <div className="flex justify-between text-gray-400 mb-2 text-lg">
               <span>Discount</span>
               <span>−{fmt(state.discountCents)}</span>
+            </div>
+          )}
+          {(state.tipCents ?? 0) > 0 && (
+            <div className="flex justify-between text-gray-400 mb-2 text-lg">
+              <span>Tip</span>
+              <span>{fmt(state.tipCents!)}</span>
             </div>
           )}
           <div className="flex justify-between items-baseline">

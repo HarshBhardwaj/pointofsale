@@ -7,6 +7,7 @@ type DisplayPayload = {
   lines: { name: string; qty: number; modifiers: string; lineCents: number }[];
   subtotalCents: number;
   discountCents: number;
+  tipCents: number;
   totalCents: number;
   updatedAt: string;
 };
@@ -23,6 +24,7 @@ const PushSchema = z.object({
   })),
   subtotalCents: z.number().int(),
   discountCents: z.number().int().default(0),
+  tipCents: z.number().int().min(0).default(0),
   totalCents: z.number().int(),
 });
 
@@ -44,6 +46,7 @@ displayRouter.post("/push", (req: Request, res: Response) => {
       })),
       subtotalCents: body.subtotalCents,
       discountCents: body.discountCents,
+      tipCents: body.tipCents,
       totalCents: body.totalCents,
       updatedAt: new Date().toISOString(),
     };

@@ -14,6 +14,7 @@ import { isOfflineCapable } from "@/lib/offline/sync";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { modifierKey, cartVatBreakdown, lineGross } from "@/lib/cartTotals";
 import { computeDiscountCents } from "@/lib/discounts";
+import { computeTipCents } from "@/lib/tips";
 import type { Product, CartItem, PaymentMethod, SelectedModifier, Discount } from "@/types";
 import toast from "react-hot-toast";
 
@@ -45,14 +46,16 @@ export default function POSPage() {
   const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [openTabLabel, setOpenTabLabel] = useState<string | null>(null);
-  const [tipCents, setTipCents] = useState(0);
+  const [tipPct, setTipPct] = useState(0);
 
   const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
   useEffect(() => {
     const { grandTotal } = cartVatBreakdown(cart);
     const discountCents = selectedDiscount ? computeDiscountCents(grandTotal, selectedDiscount) : 0;
-    const totalCents = grandTotal - discountCents + tipCents;
+    const subtotalAfterDiscount = Math.round(grandTotal - discountCents);
+    const tipCents = computeTipCents(subtotalAfterDiscount, tipPct);
+    const totalCents = subtotalAfterDiscount + tipCents;
     const payload = {
       locationId: LOCATION_ID,
       lines: cart.map((i) => ({
@@ -63,6 +66,7 @@ export default function POSPage() {
       })),
       subtotalCents: grandTotal,
       discountCents,
+      tipCents,
       totalCents,
     };
     if (cart.length === 0) {
@@ -70,7 +74,7 @@ export default function POSPage() {
     } else {
       api.post("/display/push", payload).catch(() => {});
     }
-  }, [cart, selectedDiscount, tipCents]);
+  }, [cart, selectedDiscount, tipPct]);
 
   useEffect(() => {
     Promise.all([
@@ -122,7 +126,7 @@ export default function POSPage() {
     setSelectedDiscount(null);
     setOpenOrderId(null);
     setOpenTabLabel(null);
-    setTipCents(0);
+    setTipPct(0);
   };
 
   const orderItemToCart = (order: {
@@ -190,10 +194,14 @@ export default function POSPage() {
 
   const createOrderForPayment = async () => {
     const items = cartToOrderItems(cart);
+    const { grandTotal } = cartVatBreakdown(cart);
+    const discountCents = selectedDiscount ? computeDiscountCents(grandTotal, selectedDiscount) : 0;
+    const tipCents = computeTipCents(Math.round(grandTotal - discountCents), tipPct);
     if (openOrderId) {
       const res = await api.patch(`/orders/${openOrderId}`, {
         items,
         discountId: selectedDiscount?.id ?? null,
+        tipCents,
       });
       return res.data;
     }
@@ -291,8 +299,8 @@ export default function POSPage() {
           onHoldTab={handleHoldTab}
           onRecallTab={handleRecallTab}
           openTabLabel={openTabLabel}
-          tipCents={tipCents}
-          onTipChange={setTipCents}
+          tipPct={tipPct}
+          onTipChange={setTipPct}
         />
       </div>
       {pickerProduct && (

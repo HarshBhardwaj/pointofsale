@@ -9,15 +9,18 @@ export async function deductInventoryForOrder(orderId: string) {
   });
 
   for (const item of items) {
+    const productId = item.productId;
+    if (productId == null) continue;
+
     const product = await prisma.product.findUnique({
-      where: { id: item.productId },
+      where: { id: productId },
       select: { stockQty: true, name: true, lowStockAt: true },
     });
     if (!product || product.stockQty === null) continue;
 
     const next = product.stockQty - item.quantity;
     await prisma.product.update({
-      where: { id: item.productId },
+      where: { id: productId },
       data: { stockQty: Math.max(0, next) },
     });
 

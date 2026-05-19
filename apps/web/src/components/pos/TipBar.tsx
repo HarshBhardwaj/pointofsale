@@ -2,8 +2,8 @@
 
 interface Props {
   subtotalCents: number;
-  tipCents: number;
-  onTipChange: (cents: number) => void;
+  tipPct: number;
+  onTipChange: (pct: number) => void;
 }
 
 const PRESETS = [
@@ -13,7 +13,7 @@ const PRESETS = [
   { label: "20%", pct: 20 },
 ];
 
-export function TipBar({ subtotalCents, tipCents, onTipChange }: Props) {
+export function TipBar({ subtotalCents, tipPct, onTipChange }: Props) {
   if (subtotalCents <= 0) return null;
 
   return (
@@ -21,13 +21,12 @@ export function TipBar({ subtotalCents, tipCents, onTipChange }: Props) {
       <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1.5">Tip</p>
       <div className="flex gap-1 flex-wrap">
         {PRESETS.map(({ label, pct }) => {
-          const cents = Math.round(subtotalCents * (pct / 100));
-          const active = tipCents === cents;
+          const active = tipPct === pct;
           return (
             <button
               key={label}
               type="button"
-              onClick={() => onTipChange(cents)}
+              onClick={() => onTipChange(pct)}
               className={`px-2 py-1 rounded-md text-xs border ${
                 active
                   ? "border-brand-500 bg-brand-50 text-brand-800"
