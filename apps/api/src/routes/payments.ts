@@ -7,6 +7,7 @@ import { createTerminalPaymentIntent, collectPaymentOnReader } from "../services
 import { createPayPalOrder } from "../services/paypal";
 import { startFiskalyTransaction } from "../services/fiskaly";
 import { logger } from "../lib/logger";
+import { markOrderPaid } from "../services/order";
 
 export const paymentsRouter = Router();
 
@@ -141,22 +142,17 @@ paymentsRouter.post("/cash", async (req: Request, res: Response) => {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return res.status(404).json({ error: "Order not found" });
 
-    await prisma.$transaction([
-      prisma.payment.create({
-        data: {
-          orderId,
-          provider: "CASH",
-          method: "CASH",
-          status: "SUCCEEDED",
-          amountCents: order.totalCents,
-          idempotencyKey: `cash-${orderId}-${Date.now()}`,
-        },
-      }),
-      prisma.order.update({
-        where: { id: orderId },
-        data: { status: "PAID", completedAt: new Date() },
-      }),
-    ]);
+    await prisma.payment.create({
+      data: {
+        orderId,
+        provider: "CASH",
+        method: "CASH",
+        status: "SUCCEEDED",
+        amountCents: order.totalCents,
+        idempotencyKey: `cash-${orderId}-${Date.now()}`,
+      },
+    });
+    await markOrderPaid(orderId);
 
     logger.info("Cash payment recorded", { orderId });
     res.json({ success: true });

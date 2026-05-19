@@ -1,16 +1,17 @@
 // apps/web/src/components/shared/Shell.tsx
 "use client";
 import Link from "next/link";
-import { ShoppingCart, Settings, BarChart2, Truck, MapPin, RotateCcw } from "lucide-react";
+import { ShoppingCart, Settings, BarChart2, Truck, MapPin, RotateCcw, ChefHat } from "lucide-react";
 import { Toaster } from "react-hot-toast";
 import { UserButton } from "@clerk/nextjs";
 import clsx from "clsx";
 
-type Tab = "pos" | "admin" | "dashboard" | "locations" | "refunds";
+type Tab = "pos" | "kitchen" | "admin" | "dashboard" | "locations" | "refunds";
 interface Props { children: React.ReactNode; activeTab: Tab; }
 
 const tabs = [
   { id: "pos",       label: "POS",       href: "/pos",       Icon: ShoppingCart },
+  { id: "kitchen",   label: "Kitchen",   href: "/kitchen",   Icon: ChefHat },
   { id: "admin",     label: "Menu",      href: "/admin",     Icon: Settings },
   { id: "dashboard", label: "Dashboard", href: "/dashboard", Icon: BarChart2 },
   { id: "locations", label: "Locations", href: "/locations", Icon: MapPin },

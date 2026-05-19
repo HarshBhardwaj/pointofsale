@@ -262,7 +262,10 @@ model Order {
   customerNote  String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  completedAt   DateTime?
+  completedAt     DateTime?
+  kitchenQueuedAt   DateTime?
+  kitchenStartedAt  DateTime?
+  kitchenCompletedAt DateTime?
 
   items             OrderItem[]
   payments          Payment[]
