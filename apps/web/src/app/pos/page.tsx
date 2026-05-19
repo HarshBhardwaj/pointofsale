@@ -5,9 +5,15 @@ import { Shell } from "@/components/shared/Shell";
 import { ProductGrid } from "@/components/pos/ProductGrid";
 import { Cart } from "@/components/pos/Cart";
 import { PaymentModal } from "@/components/pos/PaymentModal";
+import { OfflineBanner } from "@/components/pos/OfflineBanner";
 import { api } from "@/lib/api";
+import { enqueueOrder } from "@/lib/offline/queue";
+import { isOfflineCapable } from "@/lib/offline/sync";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 import type { Product, CartItem, PaymentMethod } from "@/types";
 import toast from "react-hot-toast";
+
+const LOCATION_ID = "loc_01";
 
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -16,6 +22,8 @@ export default function POSPage() {
   const [payModal, setPayModal] = useState<PaymentMethod | null>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [orderCount, setOrderCount] = useState(1);
+
+  const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
   useEffect(() => {
     api.get("/products?active=true")
@@ -40,11 +48,31 @@ export default function POSPage() {
 
   const handleCharge = async (method: PaymentMethod) => {
     if (!cart.length) return;
+
+    const items = cart.map((i) => ({ productId: i.product.id, quantity: i.qty }));
+
+    if (!isOnline) {
+      if (!isOfflineCapable(method)) {
+        toast.error("Card payments need internet — use cash or PayPal QR offline");
+        return;
+      }
+      try {
+        await enqueueOrder({ locationId: LOCATION_ID, items, paymentMethod: method });
+        await refresh();
+        clearCart();
+        setOrderCount((n) => n + 1);
+        toast.success("Order saved offline — will sync when connected");
+      } catch {
+        toast.error("Failed to save order offline");
+      }
+      return;
+    }
+
     try {
       const order = await api.post("/orders", {
-        locationId: "loc_01",
+        locationId: LOCATION_ID,
         channel: "POS",
-        items: cart.map((i) => ({ productId: i.product.id, quantity: i.qty })),
+        items,
       });
       setCurrentOrderId(order.data.id);
       setPayModal(method);
@@ -63,13 +91,20 @@ export default function POSPage() {
 
   return (
     <Shell activeTab="pos">
+      <OfflineBanner
+        isOnline={isOnline}
+        pendingCount={pendingCount}
+        syncing={syncing}
+        onSync={sync}
+      />
       <div className="flex h-[calc(100vh-50px)]">
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col">
           <ProductGrid products={products} loading={loading} onAdd={addItem} />
         </div>
         <Cart
           items={cart}
           orderNumber={orderCount}
+          isOnline={isOnline}
           onUpdateQty={updateQty}
           onClear={clearCart}
           onCharge={handleCharge}

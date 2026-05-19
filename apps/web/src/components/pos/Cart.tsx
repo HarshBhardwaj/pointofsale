@@ -7,12 +7,13 @@ import type { CartItem, PaymentMethod } from "@/types";
 interface Props {
   items: CartItem[];
   orderNumber: number;
+  isOnline?: boolean;
   onUpdateQty: (productId: string, qty: number) => void;
   onClear: () => void;
   onCharge: (method: PaymentMethod) => void;
 }
 
-export function Cart({ items, orderNumber, onUpdateQty, onClear, onCharge }: Props) {
+export function Cart({ items, orderNumber, isOnline = true, onUpdateQty, onClear, onCharge }: Props) {
   // Calculate VAT breakdown
   let n7 = 0, v7 = 0, n19 = 0, v19 = 0, totalQty = 0;
   items.forEach(({ product, qty }) => {
@@ -80,8 +81,9 @@ export function Cart({ items, orderNumber, onUpdateQty, onClear, onCharge }: Pro
           <span>Total</span><span>{fmt(grandTotal)}</span>
         </div>
         <div className="grid grid-cols-2 gap-1.5">
-          <button onClick={() => onCharge("card")} disabled={!hasItems}
-            className="col-span-2 btn-primary justify-center py-2.5">
+          <button onClick={() => onCharge("card")} disabled={!hasItems || !isOnline}
+            title={!isOnline ? "Card requires internet" : undefined}
+            className="col-span-2 btn-primary justify-center py-2.5 disabled:opacity-40">
             <CreditCard size={15} /> Charge card (Stripe)
           </button>
           <button onClick={() => onCharge("paypal")} disabled={!hasItems}
