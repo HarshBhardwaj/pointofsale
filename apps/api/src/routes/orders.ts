@@ -9,6 +9,7 @@ export const ordersRouter = Router();
 const CreateOrderSchema = z.object({
   locationId: z.string(),
   deviceId: z.string().optional(),
+  clientOrderId: z.string().optional(),
   channel: z.enum(["POS", "QR", "KIOSK"]).default("POS"),
   items: z.array(z.object({
     productId: z.string(),
@@ -71,6 +72,14 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
   try {
     const body = CreateOrderSchema.parse(req.body);
 
+    if (body.clientOrderId) {
+      const existing = await prisma.order.findUnique({
+        where: { clientOrderId: body.clientOrderId },
+        include: { items: { include: { product: true } } },
+      });
+      if (existing) return res.status(200).json(existing);
+    }
+
     // Fetch products with tax rates
     const products = await prisma.product.findMany({
       where: { id: { in: body.items.map((i) => i.productId) }, isActive: true },
@@ -110,6 +119,7 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
     const order = await prisma.order.create({
       data: {
         orderNumber,
+        clientOrderId: body.clientOrderId,
         merchantId: "merchant_01", // In production: from auth context
         locationId: body.locationId,
         deviceId: body.deviceId,

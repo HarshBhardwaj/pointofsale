@@ -169,6 +169,7 @@ model Product {
 model Order {
   id            String       @id @default(cuid())
   orderNumber   String       @unique // ORD-2024-00142
+  clientOrderId String?      @unique // Idempotency key from offline POS queue
   merchantId    String
   merchant      Merchant     @relation(fields: [merchantId], references: [id])
   locationId    String
