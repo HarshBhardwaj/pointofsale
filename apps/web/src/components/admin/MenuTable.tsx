@@ -7,13 +7,31 @@ import type { Product } from "@/types";
 interface Props {
   products: Product[];
   loading: boolean;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  onPageChange: (page: number) => void;
   onEdit: (p: Product) => void;
   onToggle: (p: Product) => void;
   onDelete: (p: Product) => void;
 }
 
-export function MenuTable({ products, loading, onEdit, onToggle, onDelete }: Props) {
+export function MenuTable({
+  products,
+  loading,
+  page,
+  pageSize,
+  totalCount,
+  onPageChange,
+  onEdit,
+  onToggle,
+  onDelete,
+}: Props) {
   if (loading) return <div className="card p-8 text-center text-sm text-gray-400">Loading menu…</div>;
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const rangeStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, totalCount);
 
   return (
     <div className="card overflow-hidden">
@@ -57,11 +75,39 @@ export function MenuTable({ products, loading, onEdit, onToggle, onDelete }: Pro
               </td>
             </tr>
           ))}
-          {products.length === 0 && (
+          {totalCount === 0 && (
             <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">No items yet — add your first product</td></tr>
           )}
         </tbody>
       </table>
+      {totalCount > 0 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
+          <p className="text-xs text-gray-500">
+            Showing {rangeStart}–{rangeEnd} of {totalCount}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1}
+              className="btn-ghost py-1.5 px-3 text-xs disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-gray-500 tabular-nums">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= totalPages}
+              className="btn-ghost py-1.5 px-3 text-xs disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

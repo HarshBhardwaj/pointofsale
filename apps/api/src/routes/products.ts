@@ -47,6 +47,19 @@ productsRouter.get("/", async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/products/categories ─────────────────────────────────────────
+productsRouter.get("/categories", async (_req: Request, res: Response) => {
+  try {
+    const categories = await prisma.category.findMany({
+      where: { merchantId: MERCHANT_ID, isActive: true },
+      orderBy: { sortOrder: "asc" },
+    });
+    res.json(categories);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
 // ── POST /api/products ────────────────────────────────────────────────────
 productsRouter.post("/", async (req: Request, res: Response) => {
   try {
@@ -115,16 +128,3 @@ productsRouter.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ── GET /api/products/categories ─────────────────────────────────────────
-productsRouter.get("/categories", async (req: Request, res: Response) => {
-  try {
-    const categories = await prisma.category.findMany({
-      where: { merchantId: MERCHANT_ID, isActive: true },
-      include: { products: { where: { isActive: true } } },
-      orderBy: { sortOrder: "asc" },
-    });
-    res.json(categories);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch categories" });
-  }
-});

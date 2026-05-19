@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { vatRateToPercent } from "@/lib/format";
-import type { Product } from "@/types";
+import type { Category, Product } from "@/types";
 
 const EMOJIS = ["🍔","🌮","🌯","🥗","🍟","🧅","🥦","🍕","🥩","🍺","🍶","💧","🧃","🍫","🍦","🧁","🥐","🌭","🧆","🫔"];
-const CATS = ["Burgers", "Sides", "Drinks", "Desserts", "Specials"];
 
 interface Props {
   product?: Product;
@@ -16,7 +15,8 @@ interface Props {
 
 export function ProductForm({ product, onSave, onCancel }: Props) {
   const [name, setName] = useState(product?.name || "");
-  const [cat, setCat] = useState(product?.category?.name || "Burgers");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState(product?.category?.id || "");
   const [price, setPrice] = useState(product ? (product.priceCents / 100).toFixed(2) : "");
   const [vat, setVat] = useState(
     product ? String(Math.round(vatRateToPercent(product.taxRate?.rate))) : "7"
@@ -30,16 +30,29 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // In production: fetch tax rates from API
     setTaxRates([
       { id: "tax_7", name: "MwSt. 7% (Speisen)", rate: 0.07 },
       { id: "tax_19", name: "MwSt. 19% (Getränke)", rate: 0.19 },
     ]);
-  }, []);
+    api.get("/products/categories")
+      .then((r) => {
+        const cats: Category[] = r.data;
+        setCategories(cats);
+        setCategoryId((prev) => {
+          if (product?.category?.id && cats.some((c) => c.id === product.category!.id)) {
+            return product.category.id;
+          }
+          if (prev && cats.some((c) => c.id === prev)) return prev;
+          return cats[0]?.id ?? "";
+        });
+      })
+      .catch(() => setCategories([]));
+  }, [product?.id, product?.category?.id]);
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Name is required";
+    if (!categoryId) e.category = "Category is required";
     if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) e.price = "Valid price required";
     return e;
   };
@@ -50,10 +63,11 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
     const selectedRate = taxRates.find((r) => String(Math.round(vatRateToPercent(r.rate))) === vat);
     onSave({
       name: name.trim(),
+      categoryId,
       priceCents: Math.round(parseFloat(price) * 100),
       taxRateId: selectedRate?.id || "tax_7",
       emoji,
-      isActive: true,
+      ...(!product && { isActive: true }),
       imageUrl: imageUrl.trim() || null,
       stockQty: stockQty === "" ? null : parseInt(stockQty, 10),
     });
@@ -70,9 +84,21 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
         </div>
         <div>
           <label className="text-xs text-gray-500 font-medium block mb-1.5">Category</label>
-          <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
-            {CATS.map((c) => <option key={c}>{c}</option>)}
+          <select
+            className="input"
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            disabled={categories.length === 0}
+          >
+            {categories.length === 0 ? (
+              <option value="">Loading…</option>
+            ) : (
+              categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))
+            )}
           </select>
+          {errors.category && <p className="text-xs text-red-500 mt-1">{errors.category}</p>}
         </div>
         <div>
           <label className="text-xs text-gray-500 font-medium block mb-1.5">Price (€)</label>
