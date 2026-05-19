@@ -2,6 +2,7 @@
 "use client";
 import { useState } from "react";
 import clsx from "clsx";
+import { formatVatPercent } from "@/lib/format";
 import type { Product } from "@/types";
 
 interface Props {
@@ -39,7 +40,7 @@ export function ProductGrid({ products, loading, onAdd }: Props) {
             <div className="text-2xl leading-none">{p.emoji}</div>
             <div className="text-xs font-medium text-gray-900 leading-snug line-clamp-2">{p.name}</div>
             <div className="text-xs text-gray-500">€{(p.priceCents / 100).toFixed(2)}</div>
-            <div className="text-[10px] text-gray-400">VAT {Number(p.taxRate?.rate) * 100}%</div>
+            <div className="text-[10px] text-gray-400">VAT {formatVatPercent(p.taxRate?.rate)}</div>
           </button>
         ))}
       </div>

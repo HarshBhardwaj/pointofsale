@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { vatRateToPercent } from "@/lib/format";
 import type { Product } from "@/types";
 
 const EMOJIS = ["🍔","🌮","🌯","🥗","🍟","🧅","🥦","🍕","🥩","🍺","🍶","💧","🧃","🍫","🍦","🧁","🥐","🌭","🧆","🫔"];
@@ -17,7 +18,9 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
   const [name, setName] = useState(product?.name || "");
   const [cat, setCat] = useState(product?.category?.name || "Burgers");
   const [price, setPrice] = useState(product ? (product.priceCents / 100).toFixed(2) : "");
-  const [vat, setVat] = useState(product ? String(Number(product.taxRate?.rate) * 100) : "7");
+  const [vat, setVat] = useState(
+    product ? String(Math.round(vatRateToPercent(product.taxRate?.rate))) : "7"
+  );
   const [emoji, setEmoji] = useState(product?.emoji || "🍔");
   const [taxRates, setTaxRates] = useState<any[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -40,7 +43,7 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
   const handleSave = () => {
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
-    const selectedRate = taxRates.find((r) => String(r.rate * 100) === vat);
+    const selectedRate = taxRates.find((r) => String(Math.round(vatRateToPercent(r.rate))) === vat);
     onSave({
       name: name.trim(),
       priceCents: Math.round(parseFloat(price) * 100),

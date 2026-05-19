@@ -1,6 +1,7 @@
 // apps/web/src/components/admin/MenuTable.tsx
 "use client";
 import { Edit2, Eye, EyeOff, Trash2 } from "lucide-react";
+import { formatVatPercent, vatRateToPercent } from "@/lib/format";
 import type { Product } from "@/types";
 
 interface Props {
@@ -32,8 +33,8 @@ export function MenuTable({ products, loading, onEdit, onToggle, onDelete }: Pro
               <td className="px-4 py-3 text-gray-500">{p.category?.name}</td>
               <td className="px-4 py-3">€{(p.priceCents / 100).toFixed(2)}</td>
               <td className="px-4 py-3">
-                <span className={p.taxRate && Number(p.taxRate.rate) < 0.1 ? "badge-7" : "badge-19"}>
-                  {p.taxRate ? `${Number(p.taxRate.rate) * 100}% MwSt` : "—"}
+                <span className={p.taxRate && vatRateToPercent(p.taxRate.rate) < 10 ? "badge-7" : "badge-19"}>
+                  {p.taxRate ? formatVatPercent(p.taxRate.rate, "MwSt") : "—"}
                 </span>
               </td>
               <td className="px-4 py-3">
