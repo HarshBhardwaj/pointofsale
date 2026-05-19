@@ -7,6 +7,7 @@ import { constructWebhookEvent } from "../services/stripe";
 import { capturePayPalOrder } from "../services/paypal";
 import { finishFiskalyTransaction } from "../services/fiskaly";
 import { logger } from "../lib/logger";
+import { markOrderPaid } from "../services/order";
 import { v4 as uuidv4 } from "uuid";
 
 export const webhooksRouter = Router();
@@ -49,10 +50,7 @@ webhooksRouter.post(
           });
 
           // Mark order paid
-          await prisma.order.update({
-            where: { id: orderId },
-            data: { status: "PAID", completedAt: new Date() },
-          });
+          await markOrderPaid(orderId);
 
           // Finish fiskaly TSE signing
           const order = payment.order;
@@ -153,10 +151,7 @@ webhooksRouter.post("/paypal", express.json(), async (req: Request, res: Respons
               metadata: { captureId },
             },
           });
-          await prisma.order.update({
-            where: { id: payment.orderId },
-            data: { status: "PAID", completedAt: new Date() },
-          });
+          await markOrderPaid(payment.orderId);
           await prisma.qrPaymentLink.updateMany({
             where: { orderId: payment.orderId },
             data: { status: "COMPLETED", completedAt: new Date() },

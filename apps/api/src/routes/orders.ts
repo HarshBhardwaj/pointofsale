@@ -3,6 +3,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { logger } from "../lib/logger";
+import { buildOrderItemsData } from "../lib/orderItems";
 
 export const ordersRouter = Router();
 
@@ -21,8 +22,22 @@ const CreateOrderSchema = z.object({
     modifiers: z.array(ModifierSelectionSchema).optional(),
   })),
   discountId: z.string().optional(),
+  openTab: z.boolean().optional(),
+  tabName: z.string().optional(),
+  tipCents: z.number().int().min(0).optional(),
   customerEmail: z.string().email().optional(),
   customerNote: z.string().optional(),
+});
+
+const UpdateOpenOrderSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string(),
+    quantity: z.number().int().positive(),
+    modifiers: z.array(ModifierSelectionSchema).optional(),
+  })),
+  discountId: z.string().optional().nullable(),
+  tabName: z.string().optional(),
+  tipCents: z.number().int().min(0).optional(),
 });
 
 function splitGross(lineGrossCents: number, rate: number) {
@@ -77,6 +92,18 @@ ordersRouter.get("/", async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/orders/:id/balance ── paid vs due ─────────────────────────
+ordersRouter.get("/:id/balance", async (req: Request, res: Response) => {
+  try {
+    const { getOrderBalance } = await import("../lib/orderBalance");
+    const balance = await getOrderBalance(req.params.id);
+    if (!balance) return res.status(404).json({ error: "Order not found" });
+    res.json(balance);
+  } catch {
+    res.status(500).json({ error: "Failed to get balance" });
+  }
+});
+
 // ── GET /api/orders/:id ── single order ──────────────────────────────────
 ordersRouter.get("/:id", async (req: Request, res: Response) => {
   try {
@@ -112,66 +139,20 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
       if (existing) return res.status(200).json(existing);
     }
 
-    const products = await prisma.product.findMany({
-      where: { id: { in: body.items.map((i) => i.productId) }, isActive: true },
-      include: { taxRate: true },
-    });
-
-    if (products.length !== body.items.length) {
-      return res.status(400).json({ error: "One or more products not found or inactive" });
+    let subtotalCents: number;
+    let taxCents: number;
+    let itemsData: Awaited<ReturnType<typeof buildOrderItemsData>>["itemsData"];
+    try {
+      const built = await buildOrderItemsData(body.items);
+      subtotalCents = built.subtotalCents;
+      taxCents = built.taxCents;
+      itemsData = built.itemsData;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "PRODUCT_NOT_FOUND") return res.status(400).json({ error: "One or more products not found or inactive" });
+      if (msg === "MODIFIER_NOT_FOUND") return res.status(400).json({ error: "One or more modifiers not found or inactive" });
+      throw e;
     }
-
-    const modifierIds = body.items.flatMap((i) => i.modifiers?.map((m) => m.modifierId) ?? []);
-    const modifiers = modifierIds.length
-      ? await prisma.modifier.findMany({
-          where: { id: { in: modifierIds }, isActive: true },
-        })
-      : [];
-
-    if (modifierIds.length && modifiers.length !== new Set(modifierIds).size) {
-      return res.status(400).json({ error: "One or more modifiers not found or inactive" });
-    }
-
-    let subtotalCents = 0;
-    let taxCents = 0;
-    const itemsData = body.items.map((item) => {
-      const product = products.find((p) => p.id === item.productId)!;
-      const selectedMods = (item.modifiers ?? []).map((sel) => {
-        const mod = modifiers.find((m) => m.id === sel.modifierId)!;
-        return { modifierId: mod.id, name: mod.name, priceCents: mod.priceCents };
-      });
-      const modifierCentsPerUnit = selectedMods.reduce((s, m) => s + m.priceCents, 0);
-      const unitGross = product.priceCents + modifierCentsPerUnit;
-      const lineGross = unitGross * item.quantity;
-      const rate = Number(product.taxRate.rate);
-      const { netCents, taxCents: itemTax } = splitGross(lineGross, rate);
-      subtotalCents += netCents;
-      taxCents += itemTax;
-
-      const modLabel = selectedMods.length
-        ? selectedMods.map((m) => m.name).join(", ")
-        : "";
-      const displayName = modLabel ? `${product.name} (${modLabel})` : product.name;
-
-      return {
-        productId: product.id,
-        taxRateId: product.taxRateId,
-        name: displayName,
-        priceCents: unitGross,
-        quantity: item.quantity,
-        subtotalCents: netCents,
-        taxCents: itemTax,
-        totalCents: lineGross,
-        taxRateSnapshot: product.taxRate.rate,
-        modifiers: {
-          create: selectedMods.map((m) => ({
-            modifierId: m.modifierId,
-            name: m.name,
-            priceCents: m.priceCents,
-          })),
-        },
-      };
-    });
 
     const grossTotal = subtotalCents + taxCents;
     let finalSubtotal = subtotalCents;
@@ -201,6 +182,9 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
       discountType = discount.type;
     }
 
+    const tipCents = body.tipCents ?? 0;
+    finalTotal += tipCents;
+
     const orderNumber = `ORD-${Date.now()}`;
 
     const order = await prisma.order.create({
@@ -214,10 +198,13 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
         subtotalCents: finalSubtotal,
         taxCents: finalTax,
         totalCents: finalTotal,
+        tipCents,
         discountId,
         discountName,
         discountType,
         discountCents,
+        status: body.openTab ? "OPEN" : "PENDING",
+        tabName: body.tabName,
         customerEmail: body.customerEmail,
         customerNote: body.customerNote,
         items: { create: itemsData },
@@ -241,6 +228,72 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
     if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
     logger.error("Failed to create order", { err });
     res.status(500).json({ error: "Failed to create order" });
+  }
+});
+
+// ── PATCH /api/orders/:id ── update open tab items ───────────────────────
+ordersRouter.patch("/:id", async (req: Request, res: Response) => {
+  try {
+    const body = UpdateOpenOrderSchema.parse(req.body);
+    const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Order not found" });
+    if (existing.status !== "OPEN") return res.status(400).json({ error: "Only open tabs can be updated" });
+
+    const built = await buildOrderItemsData(body.items);
+    const grossTotal = built.subtotalCents + built.taxCents;
+    let finalSubtotal = built.subtotalCents;
+    let finalTax = built.taxCents;
+    let finalTotal = grossTotal;
+    let discountCents = 0;
+    let discountId: string | null = body.discountId ?? existing.discountId;
+    let discountName = existing.discountName;
+    let discountType = existing.discountType;
+
+    if (discountId) {
+      const discount = await prisma.discount.findFirst({
+        where: { id: discountId, merchantId: "merchant_01", isActive: true },
+      });
+      if (!discount) return res.status(400).json({ error: "Discount not found" });
+      const applied = applyDiscount(grossTotal, built.subtotalCents, built.taxCents, {
+        type: discount.type,
+        value: discount.value,
+      });
+      discountCents = applied.discountCents;
+      finalSubtotal = applied.subtotalCents;
+      finalTax = applied.taxCents;
+      finalTotal = applied.totalCents;
+      discountName = discount.name;
+      discountType = discount.type;
+    } else {
+      discountId = null;
+      discountName = null;
+      discountType = null;
+    }
+
+    const tipCents = body.tipCents ?? existing.tipCents;
+    finalTotal += tipCents;
+
+    await prisma.orderItem.deleteMany({ where: { orderId: req.params.id } });
+    const order = await prisma.order.update({
+      where: { id: req.params.id },
+      data: {
+        subtotalCents: finalSubtotal,
+        taxCents: finalTax,
+        totalCents: finalTotal,
+        tipCents,
+        discountId,
+        discountName,
+        discountType,
+        discountCents,
+        tabName: body.tabName ?? existing.tabName,
+        items: { create: built.itemsData },
+      },
+      include: { items: { include: { product: true, modifiers: true } }, discount: true },
+    });
+    res.json(order);
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
+    res.status(500).json({ error: "Failed to update order" });
   }
 });
 

@@ -13,6 +13,9 @@ const ProductSchema = z.object({
   taxRateId: z.string(),
   priceCents: z.number().int().positive(),
   emoji: z.string().default("🍔"),
+  imageUrl: z.string().url().optional().nullable(),
+  stockQty: z.number().int().min(0).optional().nullable(),
+  lowStockAt: z.number().int().min(0).optional(),
   description: z.string().optional(),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
@@ -41,6 +44,19 @@ productsRouter.get("/", async (req: Request, res: Response) => {
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+// ── GET /api/products/categories ─────────────────────────────────────────
+productsRouter.get("/categories", async (_req: Request, res: Response) => {
+  try {
+    const categories = await prisma.category.findMany({
+      where: { merchantId: MERCHANT_ID, isActive: true },
+      orderBy: { sortOrder: "asc" },
+    });
+    res.json(categories);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch categories" });
   }
 });
 
@@ -112,16 +128,3 @@ productsRouter.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ── GET /api/products/categories ─────────────────────────────────────────
-productsRouter.get("/categories", async (req: Request, res: Response) => {
-  try {
-    const categories = await prisma.category.findMany({
-      where: { merchantId: MERCHANT_ID, isActive: true },
-      include: { products: { where: { isActive: true } } },
-      orderBy: { sortOrder: "asc" },
-    });
-    res.json(categories);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch categories" });
-  }
-});

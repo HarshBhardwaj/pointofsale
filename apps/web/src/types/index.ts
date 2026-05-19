@@ -54,6 +54,9 @@ export interface Product {
   category?: Category;
   taxRate?: TaxRate;
   sortOrder: number;
+  imageUrl?: string | null;
+  stockQty?: number | null;
+  lowStockAt?: number | null;
   modifierGroups?: ProductModifierGroupLink[];
 }
 

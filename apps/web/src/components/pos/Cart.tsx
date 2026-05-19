@@ -1,11 +1,14 @@
 // apps/web/src/components/pos/Cart.tsx
 "use client";
-import { CreditCard, QrCode, Banknote, Trash2 } from "lucide-react";
+import { CreditCard, QrCode, Banknote, Trash2, Bookmark } from "lucide-react";
+import { OpenTabsPanel } from "@/components/pos/OpenTabsPanel";
 import clsx from "clsx";
 import { DiscountBar } from "@/components/pos/DiscountBar";
+import { TipBar } from "@/components/pos/TipBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
 import { formatVatPercent } from "@/lib/format";
 import { computeDiscountCents } from "@/lib/discounts";
+import { computeTipCents } from "@/lib/tips";
 import type { CartItem, PaymentMethod, Discount } from "@/types";
 
 interface Props {
@@ -18,6 +21,12 @@ interface Props {
   onUpdateQty: (lineId: string, qty: number) => void;
   onClear: () => void;
   onCharge: (method: PaymentMethod) => void;
+  onSplitPay?: () => void;
+  onHoldTab?: () => void;
+  onRecallTab?: (orderId: string) => void;
+  openTabLabel?: string | null;
+  tipPct?: number;
+  onTipChange?: (pct: number) => void;
 }
 
 export function Cart({
@@ -30,24 +39,43 @@ export function Cart({
   onUpdateQty,
   onClear,
   onCharge,
+  onSplitPay,
+  onHoldTab,
+  onRecallTab,
+  openTabLabel,
+  tipPct = 0,
+  onTipChange,
 }: Props) {
   const { n7, v7, n19, v19, totalQty, grandTotal: subtotalGross } = cartVatBreakdown(items);
   const discountCents = selectedDiscount ? computeDiscountCents(subtotalGross, selectedDiscount) : 0;
-  const grandTotal = subtotalGross - discountCents;
+  const subtotalAfterDiscount = Math.round(subtotalGross - discountCents);
+  const tipCents = computeTipCents(subtotalAfterDiscount, tipPct);
+  const grandTotal = subtotalAfterDiscount + tipCents;
   const hasItems = items.length > 0;
   const fmt = (cents: number) => `€${(cents / 100).toFixed(2)}`;
 
   return (
     <div className="w-[300px] flex flex-col bg-white border-l border-gray-200">
+      {onRecallTab && <OpenTabsPanel onRecall={onRecallTab} />}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-medium">
-          Order <span className="text-gray-400 font-normal text-xs">#{String(orderNumber).padStart(3, "0")}</span>
+          {openTabLabel ? (
+            <span className="flex items-center gap-1">
+              <Bookmark size={12} className="text-brand-600" />
+              {openTabLabel}
+            </span>
+          ) : (
+            <>Order <span className="text-gray-400 font-normal text-xs">#{String(orderNumber).padStart(3, "0")}</span></>
+          )}
         </span>
         <button onClick={onClear} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
           <Trash2 size={12} /> Clear
         </button>
       </div>
 
+      {hasItems && onTipChange && (
+        <TipBar subtotalCents={subtotalAfterDiscount} tipPct={tipPct} onTipChange={onTipChange} />
+      )}
       {hasItems && (
         <DiscountBar
           discounts={discounts}
@@ -104,8 +132,36 @@ export function Cart({
             <span>−{fmt(discountCents)}</span>
           </div>
         )}
+        {tipCents > 0 && (
+          <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <span>Tip ({tipPct}%)</span>
+            <span>{fmt(tipCents)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-base font-medium mb-3 pt-2 border-t border-gray-100">
           <span>Total</span><span>{fmt(grandTotal)}</span>
+        </div>
+        <div className="flex gap-1.5 mb-2">
+          {onHoldTab && (
+            <button
+              type="button"
+              onClick={onHoldTab}
+              disabled={!hasItems || !isOnline}
+              className="flex-1 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
+            >
+              <Bookmark size={14} /> Hold tab
+            </button>
+          )}
+          {onSplitPay && (
+            <button
+              type="button"
+              onClick={onSplitPay}
+              disabled={!hasItems || !isOnline}
+              className="flex-1 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
+            >
+              Split pay
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-1.5">
           <button onClick={() => onCharge("card")} disabled={!hasItems || !isOnline}

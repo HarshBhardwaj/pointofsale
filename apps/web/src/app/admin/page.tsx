@@ -9,9 +9,12 @@ import type { Product } from "@/types";
 import toast from "react-hot-toast";
 import { Plus } from "lucide-react";
 
+const PAGE_SIZE = 15;
+
 export default function AdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [editingProduct, setEditingProduct] = useState<Product | null | "new">(null);
 
   const load = () => {
@@ -23,6 +26,13 @@ export default function AdminPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [products.length, page]);
+
+  const paginatedProducts = products.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleSave = async (data: Partial<Product>) => {
     try {
@@ -63,7 +73,8 @@ export default function AdminPage() {
 
   return (
     <Shell activeTab="admin">
-      <div className="p-5 max-w-5xl mx-auto">
+      <div className="h-full overflow-y-auto">
+      <div className="p-5 max-w-5xl mx-auto pb-10">
         <div className="flex justify-between items-center mb-5">
           <h1 className="text-xl font-medium">Menu admin</h1>
           <button className="btn-primary" onClick={() => setEditingProduct("new")}>
@@ -80,12 +91,17 @@ export default function AdminPage() {
         )}
 
         <MenuTable
-          products={products}
+          products={paginatedProducts}
           loading={loading}
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalCount={products.length}
+          onPageChange={setPage}
           onEdit={setEditingProduct}
           onToggle={handleToggle}
           onDelete={handleDelete}
         />
+      </div>
       </div>
     </Shell>
   );
