@@ -4,6 +4,7 @@ import { CreditCard, QrCode, Banknote, Trash2, Bookmark } from "lucide-react";
 import { OpenTabsPanel } from "@/components/pos/OpenTabsPanel";
 import clsx from "clsx";
 import { DiscountBar } from "@/components/pos/DiscountBar";
+import { TipBar } from "@/components/pos/TipBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
 import { formatVatPercent } from "@/lib/format";
 import { computeDiscountCents } from "@/lib/discounts";
@@ -23,6 +24,8 @@ interface Props {
   onHoldTab?: () => void;
   onRecallTab?: (orderId: string) => void;
   openTabLabel?: string | null;
+  tipCents?: number;
+  onTipChange?: (cents: number) => void;
 }
 
 export function Cart({
@@ -39,10 +42,12 @@ export function Cart({
   onHoldTab,
   onRecallTab,
   openTabLabel,
+  tipCents = 0,
+  onTipChange,
 }: Props) {
   const { n7, v7, n19, v19, totalQty, grandTotal: subtotalGross } = cartVatBreakdown(items);
   const discountCents = selectedDiscount ? computeDiscountCents(subtotalGross, selectedDiscount) : 0;
-  const grandTotal = subtotalGross - discountCents;
+  const grandTotal = subtotalGross - discountCents + tipCents;
   const hasItems = items.length > 0;
   const fmt = (cents: number) => `€${(cents / 100).toFixed(2)}`;
 
@@ -65,6 +70,9 @@ export function Cart({
         </button>
       </div>
 
+      {hasItems && onTipChange && (
+        <TipBar subtotalCents={subtotalGross - discountCents} tipCents={tipCents} onTipChange={onTipChange} />
+      )}
       {hasItems && (
         <DiscountBar
           discounts={discounts}

@@ -24,6 +24,7 @@ const CreateOrderSchema = z.object({
   discountId: z.string().optional(),
   openTab: z.boolean().optional(),
   tabName: z.string().optional(),
+  tipCents: z.number().int().min(0).optional(),
   customerEmail: z.string().email().optional(),
   customerNote: z.string().optional(),
 });
@@ -180,6 +181,9 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
       discountType = discount.type;
     }
 
+    const tipCents = body.tipCents ?? 0;
+    finalTotal += tipCents;
+
     const orderNumber = `ORD-${Date.now()}`;
 
     const order = await prisma.order.create({
@@ -193,6 +197,7 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
         subtotalCents: finalSubtotal,
         taxCents: finalTax,
         totalCents: finalTotal,
+        tipCents,
         discountId,
         discountName,
         discountType,

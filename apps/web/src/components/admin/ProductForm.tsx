@@ -22,6 +22,10 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
     product ? String(Math.round(vatRateToPercent(product.taxRate?.rate))) : "7"
   );
   const [emoji, setEmoji] = useState(product?.emoji || "🍔");
+  const [stockQty, setStockQty] = useState(
+    product?.stockQty != null ? String(product.stockQty) : ""
+  );
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl || "");
   const [taxRates, setTaxRates] = useState<any[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -50,6 +54,8 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
       taxRateId: selectedRate?.id || "tax_7",
       emoji,
       isActive: true,
+      imageUrl: imageUrl.trim() || null,
+      stockQty: stockQty === "" ? null : parseInt(stockQty, 10),
     });
   };
 
@@ -79,6 +85,14 @@ export function ProductForm({ product, onSave, onCancel }: Props) {
             <option value="7">7% — food (Lebensmittel)</option>
             <option value="19">19% — drinks / alcohol</option>
           </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-medium block mb-1.5">Stock qty (blank = unlimited)</label>
+          <input className="input" type="number" min="0" value={stockQty} onChange={(e) => setStockQty(e.target.value)} placeholder="e.g. 50" />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-gray-500 font-medium block mb-1.5">Image URL (optional)</label>
+          <input className="input" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" />
         </div>
       </div>
 

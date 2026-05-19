@@ -156,6 +156,9 @@ model Product {
   description String?
   priceCents  Int       // Always store in cents
   emoji       String    @default("🍔")
+  imageUrl    String?
+  stockQty    Int?
+  lowStockAt  Int?      @default(5)
   sku         String?
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)
@@ -257,6 +260,7 @@ model Order {
   discountName  String?
   discountType  DiscountType?
   discountCents Int          @default(0)
+  tipCents      Int          @default(0)
   currency      String       @default("EUR")
   tabName       String?
   customerEmail String?

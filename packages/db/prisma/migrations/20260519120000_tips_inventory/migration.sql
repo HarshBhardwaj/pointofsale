@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN "imageUrl" TEXT,
+ADD COLUMN "stockQty" INTEGER,
+ADD COLUMN "lowStockAt" INTEGER DEFAULT 5;
+
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN "tipCents" INTEGER NOT NULL DEFAULT 0;
