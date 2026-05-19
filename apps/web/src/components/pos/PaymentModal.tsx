@@ -3,12 +3,12 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { api } from "@/lib/api";
-import type { CartItem, PaymentMethod } from "@/types";
+import type { PaymentMethod } from "@/types";
 
 interface Props {
   method: PaymentMethod;
   orderId: string;
-  cart: CartItem[];
+  totalCents: number;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -17,15 +17,11 @@ type Phase = "idle" | "processing" | "ok" | "fail";
 
 const QR_PATTERN = [1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,1,0,1,1,0,1,0,0,1,0,0,0,1,0,0,1,0,1,1,1,1];
 
-export function PaymentModal({ method, orderId, cart, onClose, onSuccess }: Props) {
+export function PaymentModal({ method, orderId, totalCents, onClose, onSuccess }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState("");
   const [qrUrl, setQrUrl] = useState<string | null>(null);
 
-  const total = cart.reduce((s, i) => {
-    const modCents = i.modifiers.reduce((m, mod) => m + mod.priceCents, 0);
-    return s + (i.product.priceCents + modCents) * i.qty;
-  }, 0);
   const fmt = (c: number) => `€${(c / 100).toFixed(2)}`;
 
   const cfg = {
@@ -48,14 +44,11 @@ export function PaymentModal({ method, orderId, cart, onClose, onSuccess }: Prop
       if (method === "card") {
         setMessage("Waiting for card…");
         await api.post("/payments/stripe/intent", { orderId, readerId: "tmr_simulated" });
-        setMessage("Payment approved — TSE signing…");
         setPhase("ok");
         setMessage("Payment approved — receipt ready");
         setTimeout(onSuccess, 1200);
       } else if (method === "paypal") {
         setMessage("Waiting for customer to approve…");
-        // In production: poll /api/orders/:id/status or use websocket
-        // For demo: simulate approval after 2s
         await new Promise((r) => setTimeout(r, 2000));
         setPhase("ok");
         setMessage("PayPal payment captured — receipt ready");
@@ -66,9 +59,13 @@ export function PaymentModal({ method, orderId, cart, onClose, onSuccess }: Prop
         setMessage("Cash confirmed — receipt issued");
         setTimeout(onSuccess, 1000);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPhase("fail");
-      setMessage(err.response?.data?.error || "Payment failed — please retry");
+      const msg =
+        err && typeof err === "object" && "response" in err
+          ? String((err as { response?: { data?: { error?: string } } }).response?.data?.error)
+          : "Payment failed — please retry";
+      setMessage(msg || "Payment failed — please retry");
     }
   };
 
@@ -82,7 +79,7 @@ export function PaymentModal({ method, orderId, cart, onClose, onSuccess }: Prop
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <p className="text-xs text-gray-500 mb-4">{cfg[method].sub}</p>
-        <div className="text-3xl font-medium text-center my-4">{fmt(total)}</div>
+        <div className="text-3xl font-medium text-center my-4">{fmt(totalCents)}</div>
 
         {method === "paypal" && (
           <div className="flex flex-col items-center mb-4">

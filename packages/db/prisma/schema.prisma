@@ -50,6 +50,7 @@ model Merchant {
   taxRates       TaxRate[]
   modifierGroups ModifierGroup[]
   orders         Order[]
+  discounts      Discount[]
   payouts    Payout[]
   auditLogs  AuditLog[]
 }
@@ -211,6 +212,29 @@ model ProductModifierGroup {
   @@id([productId, modifierGroupId])
 }
 
+// ─── DISCOUNTS ──────────────────────────────────────────
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model Discount {
+  id         String       @id @default(cuid())
+  merchantId String
+  merchant   Merchant     @relation(fields: [merchantId], references: [id])
+  name       String
+  type       DiscountType
+  value      Int          // PERCENT: basis points (1000 = 10%), FIXED: cents
+  isActive   Boolean      @default(true)
+  sortOrder  Int          @default(0)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  orders Order[]
+
+  @@index([merchantId])
+}
+
 // ─── ORDERS ─────────────────────────────────────────────
 model Order {
   id            String       @id @default(cuid())
@@ -227,6 +251,11 @@ model Order {
   subtotalCents Int
   taxCents      Int
   totalCents    Int
+  discountId    String?
+  discount      Discount?    @relation(fields: [discountId], references: [id])
+  discountName  String?
+  discountType  DiscountType?
+  discountCents Int          @default(0)
   currency      String       @default("EUR")
   customerEmail String?
   customerNote  String?

@@ -1,6 +1,17 @@
 // apps/web/src/types/index.ts
 export type PaymentMethod = "card" | "paypal" | "cash";
 
+export type DiscountType = "PERCENT" | "FIXED";
+
+export interface Discount {
+  id: string;
+  name: string;
+  type: DiscountType;
+  value: number;
+  isActive: boolean;
+  sortOrder: number;
+}
+
 export interface TaxRate {
   id: string;
   name: string;

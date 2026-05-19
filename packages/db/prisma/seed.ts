@@ -168,7 +168,6 @@ async function main() {
     });
   }
 
-  // Link modifier groups to burger products (prod_0, prod_1, prod_2)
   for (const productId of ["prod_0", "prod_1", "prod_2"]) {
     for (const groupId of [sizeGroup.id, extrasGroup.id, removeGroup.id]) {
       await prisma.productModifierGroup.upsert({
@@ -178,6 +177,32 @@ async function main() {
       });
     }
   }
+
+  await prisma.discount.upsert({
+    where: { id: "disc_10pct" },
+    update: {},
+    create: {
+      id: "disc_10pct",
+      merchantId: merchant.id,
+      name: "10% off",
+      type: "PERCENT",
+      value: 1000,
+      sortOrder: 0,
+    },
+  });
+
+  await prisma.discount.upsert({
+    where: { id: "disc_2eur" },
+    update: {},
+    create: {
+      id: "disc_2eur",
+      merchantId: merchant.id,
+      name: "€2 off",
+      type: "FIXED",
+      value: 200,
+      sortOrder: 1,
+    },
+  });
 
   console.log("✅ Seed complete");
 }
