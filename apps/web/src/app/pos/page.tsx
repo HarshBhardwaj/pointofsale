@@ -40,6 +40,8 @@ export default function POSPage() {
   const [orderTotalCents, setOrderTotalCents] = useState<number | null>(null);
   const [orderCount, setOrderCount] = useState(1);
   const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
+  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const [openTabLabel, setOpenTabLabel] = useState<string | null>(null);
 
   const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
@@ -91,6 +93,71 @@ export default function POSPage() {
   const clearCart = () => {
     setCart([]);
     setSelectedDiscount(null);
+    setOpenOrderId(null);
+    setOpenTabLabel(null);
+  };
+
+  const orderItemToCart = (order: {
+    items: Array<{
+      productId: string;
+      quantity: number;
+      modifiers: Array<{ modifierId: string; name: string; priceCents: number }>;
+    }>;
+  }): CartItem[] =>
+    order.items.flatMap((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      if (!product) return [];
+      return [{
+        lineId: crypto.randomUUID(),
+        product,
+        qty: item.quantity,
+        modifiers: item.modifiers.map((m) => ({
+          modifierId: m.modifierId,
+          name: m.name,
+          priceCents: m.priceCents,
+          groupId: "",
+          groupName: "",
+        })),
+      }];
+    });
+
+  const handleRecallTab = async (orderId: string) => {
+    try {
+      const res = await api.get(`/orders/${orderId}`);
+      const order = res.data;
+      if (order.status !== "OPEN") {
+        toast.error("Tab is no longer open");
+        return;
+      }
+      setCart(orderItemToCart(order));
+      setOpenOrderId(order.id);
+      setOpenTabLabel(order.tabName || order.orderNumber);
+      setSelectedDiscount(
+        order.discountId ? discounts.find((d) => d.id === order.discountId) ?? null : null
+      );
+      toast.success("Tab loaded");
+    } catch {
+      toast.error("Failed to load tab");
+    }
+  };
+
+  const handleHoldTab = async () => {
+    if (!cart.length || !isOnline) return;
+    const tabName = window.prompt("Tab name (optional)")?.trim();
+    try {
+      await api.post("/orders", {
+        locationId: LOCATION_ID,
+        channel: "POS",
+        items: cartToOrderItems(cart),
+        openTab: true,
+        tabName: tabName || undefined,
+        ...(selectedDiscount && { discountId: selectedDiscount.id }),
+      });
+      clearCart();
+      toast.success("Tab held");
+    } catch {
+      toast.error("Failed to hold tab");
+    }
   };
 
   const handleCharge = async (method: PaymentMethod) => {
@@ -120,12 +187,21 @@ export default function POSPage() {
     }
 
     try {
-      const order = await api.post("/orders", {
-        locationId: LOCATION_ID,
-        channel: "POS",
-        items,
-        ...(selectedDiscount && { discountId: selectedDiscount.id }),
-      });
+      let order;
+      if (openOrderId) {
+        const res = await api.patch(`/orders/${openOrderId}`, {
+          items,
+          discountId: selectedDiscount?.id ?? null,
+        });
+        order = res;
+      } else {
+        order = await api.post("/orders", {
+          locationId: LOCATION_ID,
+          channel: "POS",
+          items,
+          ...(selectedDiscount && { discountId: selectedDiscount.id }),
+        });
+      }
       setCurrentOrderId(order.data.id);
       setOrderTotalCents(order.data.totalCents);
       setPayModal(method);
@@ -165,6 +241,9 @@ export default function POSPage() {
           onUpdateQty={updateQty}
           onClear={clearCart}
           onCharge={handleCharge}
+          onHoldTab={handleHoldTab}
+          onRecallTab={handleRecallTab}
+          openTabLabel={openTabLabel}
         />
       </div>
       {pickerProduct && (

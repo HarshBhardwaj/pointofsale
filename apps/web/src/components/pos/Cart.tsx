@@ -1,6 +1,7 @@
 // apps/web/src/components/pos/Cart.tsx
 "use client";
-import { CreditCard, QrCode, Banknote, Trash2 } from "lucide-react";
+import { CreditCard, QrCode, Banknote, Trash2, Bookmark } from "lucide-react";
+import { OpenTabsPanel } from "@/components/pos/OpenTabsPanel";
 import clsx from "clsx";
 import { DiscountBar } from "@/components/pos/DiscountBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
@@ -18,6 +19,9 @@ interface Props {
   onUpdateQty: (lineId: string, qty: number) => void;
   onClear: () => void;
   onCharge: (method: PaymentMethod) => void;
+  onHoldTab?: () => void;
+  onRecallTab?: (orderId: string) => void;
+  openTabLabel?: string | null;
 }
 
 export function Cart({
@@ -30,6 +34,9 @@ export function Cart({
   onUpdateQty,
   onClear,
   onCharge,
+  onHoldTab,
+  onRecallTab,
+  openTabLabel,
 }: Props) {
   const { n7, v7, n19, v19, totalQty, grandTotal: subtotalGross } = cartVatBreakdown(items);
   const discountCents = selectedDiscount ? computeDiscountCents(subtotalGross, selectedDiscount) : 0;
@@ -39,9 +46,17 @@ export function Cart({
 
   return (
     <div className="w-[300px] flex flex-col bg-white border-l border-gray-200">
+      {onRecallTab && <OpenTabsPanel onRecall={onRecallTab} />}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-medium">
-          Order <span className="text-gray-400 font-normal text-xs">#{String(orderNumber).padStart(3, "0")}</span>
+          {openTabLabel ? (
+            <span className="flex items-center gap-1">
+              <Bookmark size={12} className="text-brand-600" />
+              {openTabLabel}
+            </span>
+          ) : (
+            <>Order <span className="text-gray-400 font-normal text-xs">#{String(orderNumber).padStart(3, "0")}</span></>
+          )}
         </span>
         <button onClick={onClear} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
           <Trash2 size={12} /> Clear
@@ -107,6 +122,16 @@ export function Cart({
         <div className="flex justify-between text-base font-medium mb-3 pt-2 border-t border-gray-100">
           <span>Total</span><span>{fmt(grandTotal)}</span>
         </div>
+        {onHoldTab && (
+          <button
+            type="button"
+            onClick={onHoldTab}
+            disabled={!hasItems || !isOnline}
+            className="w-full mb-2 btn-ghost justify-center py-2 text-xs disabled:opacity-40"
+          >
+            <Bookmark size={14} /> Hold tab
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-1.5">
           <button onClick={() => onCharge("card")} disabled={!hasItems || !isOnline}
             title={!isOnline ? "Card requires internet" : undefined}

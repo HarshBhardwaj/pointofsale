@@ -24,7 +24,7 @@ paymentsRouter.post("/stripe/intent", async (req: Request, res: Response) => {
       include: { location: true },
     });
     if (!order) return res.status(404).json({ error: "Order not found" });
-    if (order.status !== "PENDING" && order.status !== "AWAITING_PAYMENT") {
+    if (!["PENDING", "OPEN", "AWAITING_PAYMENT"].includes(order.status)) {
       return res.status(400).json({ error: "Order is not payable" });
     }
 

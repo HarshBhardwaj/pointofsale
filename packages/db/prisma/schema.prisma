@@ -258,6 +258,7 @@ model Order {
   discountType  DiscountType?
   discountCents Int          @default(0)
   currency      String       @default("EUR")
+  tabName       String?
   customerEmail String?
   customerNote  String?
   createdAt     DateTime     @default(now())
@@ -282,6 +283,7 @@ model Order {
 
 enum OrderStatus {
   PENDING
+  OPEN
   AWAITING_PAYMENT
   PAID
   PARTIALLY_REFUNDED
