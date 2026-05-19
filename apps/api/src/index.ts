@@ -12,6 +12,7 @@ import { refundsRouter } from "./routes/refunds";
 import { locationsRouter } from "./routes/locations";
 import { analyticsRouter } from "./routes/analytics";
 import { receiptsRouter } from "./routes/receipts";
+import { modifiersRouter } from "./routes/modifiers";
 import { errorHandler } from "./middleware/errorHandler";
 import { idempotency } from "./middleware/idempotency";
 import { logger } from "./lib/logger";
@@ -31,6 +32,7 @@ app.use("/api/payments", idempotency);
 
 app.use("/api/orders",    ordersRouter);
 app.use("/api/products",  productsRouter);
+app.use("/api/modifiers", modifiersRouter);
 app.use("/api/payments",  paymentsRouter);
 app.use("/api/refunds",   refundsRouter);
 app.use("/api/receipts",  receiptsRouter);

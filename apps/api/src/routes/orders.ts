@@ -6,6 +6,10 @@ import { logger } from "../lib/logger";
 
 export const ordersRouter = Router();
 
+const ModifierSelectionSchema = z.object({
+  modifierId: z.string(),
+});
+
 const CreateOrderSchema = z.object({
   locationId: z.string(),
   deviceId: z.string().optional(),
@@ -14,10 +18,17 @@ const CreateOrderSchema = z.object({
   items: z.array(z.object({
     productId: z.string(),
     quantity: z.number().int().positive(),
+    modifiers: z.array(ModifierSelectionSchema).optional(),
   })),
   customerEmail: z.string().email().optional(),
   customerNote: z.string().optional(),
 });
+
+function splitGross(lineGrossCents: number, rate: number) {
+  const netCents = Math.round(lineGrossCents / (1 + rate));
+  const taxCents = lineGrossCents - netCents;
+  return { netCents, taxCents };
+}
 
 // ── GET /api/orders ── list orders for a location ───────────────────────
 ordersRouter.get("/", async (req: Request, res: Response) => {
@@ -29,7 +40,7 @@ ordersRouter.get("/", async (req: Request, res: Response) => {
         ...(status && { status: String(status) as any }),
       },
       include: {
-        items: { include: { product: true } },
+        items: { include: { product: true, modifiers: true } },
         payments: true,
         receipt: true,
         location: true,
@@ -51,7 +62,7 @@ ordersRouter.get("/:id", async (req: Request, res: Response) => {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
       include: {
-        items: { include: { product: true, taxRate: true } },
+        items: { include: { product: true, taxRate: true, modifiers: true } },
         payments: true,
         refunds: true,
         receipt: true,
@@ -75,12 +86,11 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
     if (body.clientOrderId) {
       const existing = await prisma.order.findUnique({
         where: { clientOrderId: body.clientOrderId },
-        include: { items: { include: { product: true } } },
+        include: { items: { include: { product: true, modifiers: true } } },
       });
       if (existing) return res.status(200).json(existing);
     }
 
-    // Fetch products with tax rates
     const products = await prisma.product.findMany({
       where: { id: { in: body.items.map((i) => i.productId) }, isActive: true },
       include: { taxRate: true },
@@ -90,26 +100,55 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "One or more products not found or inactive" });
     }
 
-    // Calculate totals
-    let subtotalCents = 0, taxCents = 0;
+    const modifierIds = body.items.flatMap((i) => i.modifiers?.map((m) => m.modifierId) ?? []);
+    const modifiers = modifierIds.length
+      ? await prisma.modifier.findMany({
+          where: { id: { in: modifierIds }, isActive: true },
+        })
+      : [];
+
+    if (modifierIds.length && modifiers.length !== new Set(modifierIds).size) {
+      return res.status(400).json({ error: "One or more modifiers not found or inactive" });
+    }
+
+    let subtotalCents = 0;
+    let taxCents = 0;
     const itemsData = body.items.map((item) => {
       const product = products.find((p) => p.id === item.productId)!;
-      const lineCents = product.priceCents * item.quantity;
+      const selectedMods = (item.modifiers ?? []).map((sel) => {
+        const mod = modifiers.find((m) => m.id === sel.modifierId)!;
+        return { modifierId: mod.id, name: mod.name, priceCents: mod.priceCents };
+      });
+      const modifierCentsPerUnit = selectedMods.reduce((s, m) => s + m.priceCents, 0);
+      const unitGross = product.priceCents + modifierCentsPerUnit;
+      const lineGross = unitGross * item.quantity;
       const rate = Number(product.taxRate.rate);
-      const netCents = Math.round(lineCents / (1 + rate));
-      const itemTax = lineCents - netCents;
+      const { netCents, taxCents: itemTax } = splitGross(lineGross, rate);
       subtotalCents += netCents;
       taxCents += itemTax;
+
+      const modLabel = selectedMods.length
+        ? selectedMods.map((m) => m.name).join(", ")
+        : "";
+      const displayName = modLabel ? `${product.name} (${modLabel})` : product.name;
+
       return {
         productId: product.id,
         taxRateId: product.taxRateId,
-        name: product.name,
-        priceCents: product.priceCents,
+        name: displayName,
+        priceCents: unitGross,
         quantity: item.quantity,
         subtotalCents: netCents,
         taxCents: itemTax,
-        totalCents: lineCents,
+        totalCents: lineGross,
         taxRateSnapshot: product.taxRate.rate,
+        modifiers: {
+          create: selectedMods.map((m) => ({
+            modifierId: m.modifierId,
+            name: m.name,
+            priceCents: m.priceCents,
+          })),
+        },
       };
     });
 
@@ -131,10 +170,9 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
         customerNote: body.customerNote,
         items: { create: itemsData },
       },
-      include: { items: { include: { product: true } } },
+      include: { items: { include: { product: true, modifiers: true } } },
     });
 
-    // Audit log
     await prisma.auditLog.create({
       data: {
         merchantId: "merchant_01",

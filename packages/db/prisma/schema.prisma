@@ -45,10 +45,11 @@ model Merchant {
 
   users      User[]
   locations  Location[]
-  products   Product[]
-  categories Category[]
-  taxRates   TaxRate[]
-  orders     Order[]
+  products       Product[]
+  categories     Category[]
+  taxRates       TaxRate[]
+  modifierGroups ModifierGroup[]
+  orders         Order[]
   payouts    Payout[]
   auditLogs  AuditLog[]
 }
@@ -159,10 +160,55 @@ model Product {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  orderItems OrderItem[]
+  orderItems      OrderItem[]
+  modifierGroups  ProductModifierGroup[]
 
   @@index([merchantId])
   @@index([categoryId])
+}
+
+// ─── MODIFIERS ──────────────────────────────────────────
+model ModifierGroup {
+  id            String   @id @default(cuid())
+  merchantId    String
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  name          String   // "Size", "Extras", "Remove"
+  minSelections Int      @default(0)
+  maxSelections Int      @default(1) // 0 = unlimited
+  isRequired    Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  modifiers Modifier[]
+  products  ProductModifierGroup[]
+
+  @@index([merchantId])
+}
+
+model Modifier {
+  id              String        @id @default(cuid())
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  name            String
+  priceCents      Int           @default(0)
+  sortOrder       Int           @default(0)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  orderItemModifiers OrderItemModifier[]
+
+  @@index([modifierGroupId])
+}
+
+model ProductModifierGroup {
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@id([productId, modifierGroupId])
 }
 
 // ─── ORDERS ─────────────────────────────────────────────
@@ -233,7 +279,21 @@ model OrderItem {
   totalCents       Int
   taxRateSnapshot  Decimal @db.Decimal(5, 4)
 
+  modifiers OrderItemModifier[]
+
   @@index([orderId])
+}
+
+model OrderItemModifier {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifierId  String?
+  modifier    Modifier? @relation(fields: [modifierId], references: [id])
+  name        String
+  priceCents  Int       @default(0)
+
+  @@index([orderItemId])
 }
 
 // ─── PAYMENTS ───────────────────────────────────────────

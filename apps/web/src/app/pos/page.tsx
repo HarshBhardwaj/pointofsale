@@ -6,14 +6,28 @@ import { ProductGrid } from "@/components/pos/ProductGrid";
 import { Cart } from "@/components/pos/Cart";
 import { PaymentModal } from "@/components/pos/PaymentModal";
 import { OfflineBanner } from "@/components/pos/OfflineBanner";
+import { ModifierPicker } from "@/components/pos/ModifierPicker";
 import { api } from "@/lib/api";
 import { enqueueOrder } from "@/lib/offline/queue";
 import { isOfflineCapable } from "@/lib/offline/sync";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
-import type { Product, CartItem, PaymentMethod } from "@/types";
+import { modifierKey } from "@/lib/cartTotals";
+import type { Product, CartItem, PaymentMethod, SelectedModifier } from "@/types";
 import toast from "react-hot-toast";
 
 const LOCATION_ID = "loc_01";
+
+function hasModifierGroups(product: Product): boolean {
+  return (product.modifierGroups ?? []).some((l) => l.modifierGroup.modifiers.length > 0);
+}
+
+function cartToOrderItems(cart: CartItem[]) {
+  return cart.map((i) => ({
+    productId: i.product.id,
+    quantity: i.qty,
+    modifiers: i.modifiers.map((m) => ({ modifierId: m.modifierId })),
+  }));
+}
 
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -22,6 +36,7 @@ export default function POSPage() {
   const [payModal, setPayModal] = useState<PaymentMethod | null>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [orderCount, setOrderCount] = useState(1);
+  const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
 
   const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
@@ -32,16 +47,36 @@ export default function POSPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const addItem = (product: Product) => {
+  const addToCart = (product: Product, modifiers: SelectedModifier[]) => {
+    const key = modifierKey(modifiers);
     setCart((c) => {
-      const existing = c.find((i) => i.product.id === product.id);
-      if (existing) return c.map((i) => i.product.id === product.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...c, { product, qty: 1 }];
+      const existing = c.find(
+        (i) => i.product.id === product.id && modifierKey(i.modifiers) === key
+      );
+      if (existing) {
+        return c.map((i) =>
+          i.lineId === existing.lineId ? { ...i, qty: i.qty + 1 } : i
+        );
+      }
+      return [
+        ...c,
+        { lineId: crypto.randomUUID(), product, qty: 1, modifiers },
+      ];
     });
   };
 
-  const updateQty = (productId: string, qty: number) => {
-    setCart((c) => qty <= 0 ? c.filter((i) => i.product.id !== productId) : c.map((i) => i.product.id === productId ? { ...i, qty } : i));
+  const handleProductTap = (product: Product) => {
+    if (hasModifierGroups(product)) {
+      setPickerProduct(product);
+    } else {
+      addToCart(product, []);
+    }
+  };
+
+  const updateQty = (lineId: string, qty: number) => {
+    setCart((c) =>
+      qty <= 0 ? c.filter((i) => i.lineId !== lineId) : c.map((i) => (i.lineId === lineId ? { ...i, qty } : i))
+    );
   };
 
   const clearCart = () => setCart([]);
@@ -49,7 +84,7 @@ export default function POSPage() {
   const handleCharge = async (method: PaymentMethod) => {
     if (!cart.length) return;
 
-    const items = cart.map((i) => ({ productId: i.product.id, quantity: i.qty }));
+    const items = cartToOrderItems(cart);
 
     if (!isOnline) {
       if (!isOfflineCapable(method)) {
@@ -57,7 +92,11 @@ export default function POSPage() {
         return;
       }
       try {
-        await enqueueOrder({ locationId: LOCATION_ID, items, paymentMethod: method });
+        await enqueueOrder({
+          locationId: LOCATION_ID,
+          items: items.map(({ productId, quantity }) => ({ productId, quantity })),
+          paymentMethod: method,
+        });
         await refresh();
         clearCart();
         setOrderCount((n) => n + 1);
@@ -99,7 +138,7 @@ export default function POSPage() {
       />
       <div className="flex h-[calc(100vh-50px)]">
         <div className="flex-1 overflow-hidden flex flex-col">
-          <ProductGrid products={products} loading={loading} onAdd={addItem} />
+          <ProductGrid products={products} loading={loading} onAdd={handleProductTap} />
         </div>
         <Cart
           items={cart}
@@ -110,6 +149,16 @@ export default function POSPage() {
           onCharge={handleCharge}
         />
       </div>
+      {pickerProduct && (
+        <ModifierPicker
+          product={pickerProduct}
+          onConfirm={(mods) => {
+            addToCart(pickerProduct, mods);
+            setPickerProduct(null);
+          }}
+          onClose={() => setPickerProduct(null)}
+        />
+      )}
       {payModal && currentOrderId && (
         <PaymentModal
           method={payModal}

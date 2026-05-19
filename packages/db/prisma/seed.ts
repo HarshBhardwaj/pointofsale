@@ -102,6 +102,83 @@ async function main() {
     },
   });
 
+  // Modifier groups for burgers
+  const sizeGroup = await prisma.modifierGroup.upsert({
+    where: { id: "modgrp_size" },
+    update: {},
+    create: {
+      id: "modgrp_size",
+      merchantId: merchant.id,
+      name: "Size",
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 0,
+    },
+  });
+
+  const extrasGroup = await prisma.modifierGroup.upsert({
+    where: { id: "modgrp_extras" },
+    update: {},
+    create: {
+      id: "modgrp_extras",
+      merchantId: merchant.id,
+      name: "Extras",
+      minSelections: 0,
+      maxSelections: 0,
+      isRequired: false,
+      sortOrder: 1,
+    },
+  });
+
+  const removeGroup = await prisma.modifierGroup.upsert({
+    where: { id: "modgrp_remove" },
+    update: {},
+    create: {
+      id: "modgrp_remove",
+      merchantId: merchant.id,
+      name: "Remove",
+      minSelections: 0,
+      maxSelections: 0,
+      isRequired: false,
+      sortOrder: 2,
+    },
+  });
+
+  const modifiers = [
+    { id: "mod_sm", groupId: sizeGroup.id, name: "Regular", price: 0, sort: 0 },
+    { id: "mod_lg", groupId: sizeGroup.id, name: "Large", price: 150, sort: 1 },
+    { id: "mod_cheese", groupId: extrasGroup.id, name: "Extra cheese", price: 100, sort: 0 },
+    { id: "mod_sauce", groupId: extrasGroup.id, name: "Extra sauce", price: 50, sort: 1 },
+    { id: "mod_pickles", groupId: removeGroup.id, name: "No pickles", price: 0, sort: 0 },
+    { id: "mod_onion", groupId: removeGroup.id, name: "No onion", price: 0, sort: 1 },
+  ];
+
+  for (const m of modifiers) {
+    await prisma.modifier.upsert({
+      where: { id: m.id },
+      update: {},
+      create: {
+        id: m.id,
+        modifierGroupId: m.groupId,
+        name: m.name,
+        priceCents: m.price,
+        sortOrder: m.sort,
+      },
+    });
+  }
+
+  // Link modifier groups to burger products (prod_0, prod_1, prod_2)
+  for (const productId of ["prod_0", "prod_1", "prod_2"]) {
+    for (const groupId of [sizeGroup.id, extrasGroup.id, removeGroup.id]) {
+      await prisma.productModifierGroup.upsert({
+        where: { productId_modifierGroupId: { productId, modifierGroupId: groupId } },
+        update: {},
+        create: { productId, modifierGroupId: groupId },
+      });
+    }
+  }
+
   console.log("✅ Seed complete");
 }
 

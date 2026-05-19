@@ -23,7 +23,19 @@ productsRouter.get("/", async (req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
       where: { merchantId: MERCHANT_ID, ...(req.query.active && { isActive: true }) },
-      include: { category: true, taxRate: true },
+      include: {
+        category: true,
+        taxRate: true,
+        modifierGroups: {
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
+              },
+            },
+          },
+        },
+      },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     });
     res.json(products);
@@ -38,7 +50,19 @@ productsRouter.post("/", async (req: Request, res: Response) => {
     const data = ProductSchema.parse(req.body);
     const product = await prisma.product.create({
       data: { ...data, merchantId: MERCHANT_ID },
-      include: { category: true, taxRate: true },
+      include: {
+        category: true,
+        taxRate: true,
+        modifierGroups: {
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
+              },
+            },
+          },
+        },
+      },
     });
     res.status(201).json(product);
   } catch (err) {
@@ -54,7 +78,19 @@ productsRouter.patch("/:id", async (req: Request, res: Response) => {
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data,
-      include: { category: true, taxRate: true },
+      include: {
+        category: true,
+        taxRate: true,
+        modifierGroups: {
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
+              },
+            },
+          },
+        },
+      },
     });
     res.json(product);
   } catch (err) {

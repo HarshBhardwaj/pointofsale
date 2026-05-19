@@ -22,7 +22,10 @@ export function PaymentModal({ method, orderId, cart, onClose, onSuccess }: Prop
   const [message, setMessage] = useState("");
   const [qrUrl, setQrUrl] = useState<string | null>(null);
 
-  const total = cart.reduce((s, i) => s + i.product.priceCents * i.qty, 0);
+  const total = cart.reduce((s, i) => {
+    const modCents = i.modifiers.reduce((m, mod) => m + mod.priceCents, 0);
+    return s + (i.product.priceCents + modCents) * i.qty;
+  }, 0);
   const fmt = (c: number) => `€${(c / 100).toFixed(2)}`;
 
   const cfg = {
