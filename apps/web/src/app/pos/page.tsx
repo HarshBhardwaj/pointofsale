@@ -12,7 +12,7 @@ import { enqueueOrder } from "@/lib/offline/queue";
 import { isOfflineCapable } from "@/lib/offline/sync";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { modifierKey } from "@/lib/cartTotals";
-import type { Product, CartItem, PaymentMethod, SelectedModifier } from "@/types";
+import type { Product, CartItem, PaymentMethod, SelectedModifier, Discount } from "@/types";
 import toast from "react-hot-toast";
 
 const LOCATION_ID = "loc_01";
@@ -31,18 +31,27 @@ function cartToOrderItems(cart: CartItem[]) {
 
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedDiscount, setSelectedDiscount] = useState<Discount | null>(null);
   const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState<PaymentMethod | null>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [orderTotalCents, setOrderTotalCents] = useState<number | null>(null);
   const [orderCount, setOrderCount] = useState(1);
   const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
 
   const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
   useEffect(() => {
-    api.get("/products?active=true")
-      .then((r) => setProducts(r.data))
+    Promise.all([
+      api.get("/products?active=true"),
+      api.get("/discounts"),
+    ])
+      .then(([productsRes, discountsRes]) => {
+        setProducts(productsRes.data);
+        setDiscounts(discountsRes.data);
+      })
       .catch(() => toast.error("Failed to load menu"))
       .finally(() => setLoading(false));
   }, []);
@@ -79,7 +88,10 @@ export default function POSPage() {
     );
   };
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => {
+    setCart([]);
+    setSelectedDiscount(null);
+  };
 
   const handleCharge = async (method: PaymentMethod) => {
     if (!cart.length) return;
@@ -112,8 +124,10 @@ export default function POSPage() {
         locationId: LOCATION_ID,
         channel: "POS",
         items,
+        ...(selectedDiscount && { discountId: selectedDiscount.id }),
       });
       setCurrentOrderId(order.data.id);
+      setOrderTotalCents(order.data.totalCents);
       setPayModal(method);
     } catch {
       toast.error("Failed to create order");
@@ -123,6 +137,7 @@ export default function POSPage() {
   const handlePaymentSuccess = () => {
     setPayModal(null);
     setCurrentOrderId(null);
+    setOrderTotalCents(null);
     clearCart();
     setOrderCount((n) => n + 1);
     toast.success("Payment successful — receipt ready");
@@ -144,6 +159,9 @@ export default function POSPage() {
           items={cart}
           orderNumber={orderCount}
           isOnline={isOnline}
+          discounts={discounts}
+          selectedDiscount={selectedDiscount}
+          onSelectDiscount={setSelectedDiscount}
           onUpdateQty={updateQty}
           onClear={clearCart}
           onCharge={handleCharge}
@@ -159,12 +177,16 @@ export default function POSPage() {
           onClose={() => setPickerProduct(null)}
         />
       )}
-      {payModal && currentOrderId && (
+      {payModal && currentOrderId && orderTotalCents !== null && (
         <PaymentModal
           method={payModal}
           orderId={currentOrderId}
-          cart={cart}
-          onClose={() => { setPayModal(null); setCurrentOrderId(null); }}
+          totalCents={orderTotalCents}
+          onClose={() => {
+            setPayModal(null);
+            setCurrentOrderId(null);
+            setOrderTotalCents(null);
+          }}
           onSuccess={handlePaymentSuccess}
         />
       )}

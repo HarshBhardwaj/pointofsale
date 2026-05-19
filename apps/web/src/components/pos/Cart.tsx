@@ -2,20 +2,37 @@
 "use client";
 import { CreditCard, QrCode, Banknote, Trash2 } from "lucide-react";
 import clsx from "clsx";
+import { DiscountBar } from "@/components/pos/DiscountBar";
 import { cartVatBreakdown, lineGross, lineUnitGross } from "@/lib/cartTotals";
-import type { CartItem, PaymentMethod } from "@/types";
+import { computeDiscountCents } from "@/lib/discounts";
+import type { CartItem, PaymentMethod, Discount } from "@/types";
 
 interface Props {
   items: CartItem[];
   orderNumber: number;
   isOnline?: boolean;
+  discounts: Discount[];
+  selectedDiscount: Discount | null;
+  onSelectDiscount: (discount: Discount | null) => void;
   onUpdateQty: (lineId: string, qty: number) => void;
   onClear: () => void;
   onCharge: (method: PaymentMethod) => void;
 }
 
-export function Cart({ items, orderNumber, isOnline = true, onUpdateQty, onClear, onCharge }: Props) {
-  const { n7, v7, n19, v19, totalQty, grandTotal } = cartVatBreakdown(items);
+export function Cart({
+  items,
+  orderNumber,
+  isOnline = true,
+  discounts,
+  selectedDiscount,
+  onSelectDiscount,
+  onUpdateQty,
+  onClear,
+  onCharge,
+}: Props) {
+  const { n7, v7, n19, v19, totalQty, grandTotal: subtotalGross } = cartVatBreakdown(items);
+  const discountCents = selectedDiscount ? computeDiscountCents(subtotalGross, selectedDiscount) : 0;
+  const grandTotal = subtotalGross - discountCents;
   const hasItems = items.length > 0;
   const fmt = (cents: number) => `€${(cents / 100).toFixed(2)}`;
 
@@ -29,6 +46,14 @@ export function Cart({ items, orderNumber, isOnline = true, onUpdateQty, onClear
           <Trash2 size={12} /> Clear
         </button>
       </div>
+
+      {hasItems && (
+        <DiscountBar
+          discounts={discounts}
+          selected={selectedDiscount}
+          onSelect={onSelectDiscount}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-2 min-h-[160px]">
         {items.length === 0 ? (
@@ -72,6 +97,12 @@ export function Cart({ items, orderNumber, isOnline = true, onUpdateQty, onClear
           </div>
         )}
         <div className="flex justify-between text-xs text-gray-500 mb-1"><span>Items</span><span>{totalQty}</span></div>
+        {discountCents > 0 && selectedDiscount && (
+          <div className="flex justify-between text-xs text-green-700 mb-1">
+            <span>{selectedDiscount.name}</span>
+            <span>−{fmt(discountCents)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-base font-medium mb-3 pt-2 border-t border-gray-100">
           <span>Total</span><span>{fmt(grandTotal)}</span>
         </div>
