@@ -1,0 +1,417 @@
+// packages/db/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ───────────────────────────────────────────────
+model User {
+  id         String   @id @default(cuid())
+  clerkId    String   @unique
+  email      String   @unique
+  name       String?
+  role       UserRole @default(STAFF)
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([merchantId])
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+// ─── MERCHANT ───────────────────────────────────────────
+model Merchant {
+  id                    String         @id @default(cuid())
+  name                  String
+  legalName             String
+  taxId                 String         // Steuernummer
+  vatId                 String?        // USt-IdNr
+  stripeAccountId       String?        @unique
+  paypalMerchantId      String?
+  fiskalyOrganizationId String?
+  status                MerchantStatus @default(ACTIVE)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  users      User[]
+  locations  Location[]
+  products   Product[]
+  categories Category[]
+  taxRates   TaxRate[]
+  orders     Order[]
+  payouts    Payout[]
+  auditLogs  AuditLog[]
+}
+
+enum MerchantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+// ─── LOCATIONS & DEVICES ────────────────────────────────
+model Location {
+  id               String   @id @default(cuid())
+  merchantId       String
+  merchant         Merchant @relation(fields: [merchantId], references: [id])
+  name             String
+  address          String?
+  city             String   @default("Berlin")
+  timezone         String   @default("Europe/Berlin")
+  currency         String   @default("EUR")
+  stripeLocationId String?  @unique
+  fiskalyTssId     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  devices Device[]
+  orders  Order[]
+
+  @@index([merchantId])
+}
+
+model Device {
+  id               String       @id @default(cuid())
+  locationId       String
+  location         Location     @relation(fields: [locationId], references: [id])
+  label            String
+  stripeReaderId   String?      @unique
+  fiskalyClientId  String?
+  serialNumber     String?
+  type             DeviceType
+  status           DeviceStatus @default(OFFLINE)
+  lastSeenAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  orders Order[]
+
+  @@index([locationId])
+}
+
+enum DeviceType {
+  POS_TABLET
+  CARD_READER
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  PAIRING
+}
+
+// ─── MENU ───────────────────────────────────────────────
+model Category {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  name       String
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  products Product[]
+
+  @@index([merchantId])
+}
+
+model TaxRate {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  name       String   // "MwSt. 7%"
+  rate       Decimal  @db.Decimal(5, 4) // 0.0700
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  products   Product[]
+  orderItems OrderItem[]
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  merchantId  String
+  merchant    Merchant  @relation(fields: [merchantId], references: [id])
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  taxRateId   String
+  taxRate     TaxRate   @relation(fields: [taxRateId], references: [id])
+  name        String
+  description String?
+  priceCents  Int       // Always store in cents
+  emoji       String    @default("🍔")
+  sku         String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([merchantId])
+  @@index([categoryId])
+}
+
+// ─── ORDERS ─────────────────────────────────────────────
+model Order {
+  id            String       @id @default(cuid())
+  orderNumber   String       @unique // ORD-2024-00142
+  merchantId    String
+  merchant      Merchant     @relation(fields: [merchantId], references: [id])
+  locationId    String
+  location      Location     @relation(fields: [locationId], references: [id])
+  deviceId      String?
+  device        Device?      @relation(fields: [deviceId], references: [id])
+  status        OrderStatus  @default(PENDING)
+  channel       OrderChannel @default(POS)
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+  currency      String       @default("EUR")
+  customerEmail String?
+  customerNote  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  completedAt   DateTime?
+
+  items             OrderItem[]
+  payments          Payment[]
+  refunds           Refund[]
+  receipt           Receipt?
+  fiscalTransaction FiscalTransaction?
+  qrPaymentLink     QrPaymentLink?
+
+  @@index([merchantId])
+  @@index([locationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum OrderStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  CANCELLED
+  FAILED
+}
+
+enum OrderChannel {
+  POS
+  QR
+  KIOSK
+}
+
+model OrderItem {
+  id               String  @id @default(cuid())
+  orderId          String
+  order            Order   @relation(fields: [orderId], references: [id])
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id])
+  taxRateId        String
+  taxRate          TaxRate  @relation(fields: [taxRateId], references: [id])
+  name             String  // Snapshot
+  priceCents       Int
+  quantity         Int
+  subtotalCents    Int
+  taxCents         Int
+  totalCents       Int
+  taxRateSnapshot  Decimal @db.Decimal(5, 4)
+
+  @@index([orderId])
+}
+
+// ─── PAYMENTS ───────────────────────────────────────────
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  order             Order         @relation(fields: [orderId], references: [id])
+  provider          PaymentProvider
+  providerPaymentId String?       @unique
+  providerChargeId  String?
+  method            PaymentMethod
+  status            PaymentStatus @default(PENDING)
+  amountCents       Int
+  currency          String        @default("EUR")
+  stripeReaderId    String?
+  failureCode       String?
+  failureMessage    String?
+  idempotencyKey    String        @unique
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  refunds Refund[]
+
+  @@index([orderId])
+  @@index([providerPaymentId])
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+  CASH
+}
+
+enum PaymentMethod {
+  CARD_PRESENT
+  CONTACTLESS
+  APPLE_PAY
+  GOOGLE_PAY
+  PAYPAL_QR
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REQUIRES_ACTION
+}
+
+// ─── REFUNDS ────────────────────────────────────────────
+model Refund {
+  id               String       @id @default(cuid())
+  orderId          String
+  order            Order        @relation(fields: [orderId], references: [id])
+  paymentId        String
+  payment          Payment      @relation(fields: [paymentId], references: [id])
+  providerRefundId String?      @unique
+  amountCents      Int
+  reason           String?
+  status           RefundStatus @default(PENDING)
+  initiatedBy      String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([orderId])
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+// ─── RECEIPTS ───────────────────────────────────────────
+model Receipt {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id])
+  receiptNumber   String   @unique
+  pdfUrl          String?
+  emailSentTo     String?
+  qrCodeUrl       String?
+  merchantName    String
+  merchantAddress String
+  merchantTaxId   String
+  vatBreakdown    Json     // [{rate, net, vat, gross}]
+  issuedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+// ─── PAYOUTS ────────────────────────────────────────────
+model Payout {
+  id               String       @id @default(cuid())
+  merchantId       String
+  merchant         Merchant     @relation(fields: [merchantId], references: [id])
+  providerPayoutId String?      @unique
+  amountCents      Int
+  currency         String       @default("EUR")
+  status           PayoutStatus @default(PENDING)
+  arrivalDate      DateTime?
+  description      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([merchantId])
+}
+
+enum PayoutStatus {
+  PENDING
+  IN_TRANSIT
+  PAID
+  FAILED
+  CANCELLED
+}
+
+// ─── FISCALIZATION ──────────────────────────────────────
+model FiscalTransaction {
+  id                 String   @id @default(cuid())
+  orderId            String   @unique
+  order              Order    @relation(fields: [orderId], references: [id])
+  fiskalyTxId        String?  @unique
+  fiskalyTssId       String
+  fiskalyClientId    String
+  transactionType    String   @default("RECEIPT")
+  signature          String?
+  signatureCounter   Int?
+  processType        String?  @default("Kassenbeleg-V1")
+  processData        String?
+  startTime          DateTime
+  endTime            DateTime?
+  exportedToDsfinvk  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  @@index([fiskalyTssId])
+}
+
+// ─── QR PAYMENT LINKS ───────────────────────────────────
+model QrPaymentLink {
+  id          String       @id @default(cuid())
+  orderId     String       @unique
+  order       Order        @relation(fields: [orderId], references: [id])
+  token       String       @unique @default(cuid())
+  status      QrLinkStatus @default(ACTIVE)
+  expiresAt   DateTime
+  scannedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([token])
+}
+
+enum QrLinkStatus {
+  ACTIVE
+  SCANNED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+// ─── AUDIT LOG (GoBD — immutable) ───────────────────────
+model AuditLog {
+  id         String    @id @default(cuid())
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  userId     String?
+  action     String    // "order.created"
+  entityType String    // "Order"
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  // GoBD: NEVER update or delete audit log rows — enforce at app layer
+  @@index([merchantId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
