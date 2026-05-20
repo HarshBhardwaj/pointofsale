@@ -81,10 +81,18 @@ cp apps/web/.env.example apps/web/.env
 
 ### 3. Set up the database
 
+With Docker Postgres running (`docker compose up -d postgres`), set `DATABASE_URL` in the root `.env` (see `.env.docker.example`; host port **5433**).
+
 ```bash
-cd packages/db
-npx prisma migrate dev --name init
-npx prisma db seed
+# From repo root (loads root .env)
+npm run db:migrate:deploy
+npm run db:seed --workspace=packages/db   # optional demo data
+```
+
+For a new migration during development:
+
+```bash
+npm run db:migrate
 ```
 
 ### 4. Run development servers

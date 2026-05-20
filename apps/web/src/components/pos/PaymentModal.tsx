@@ -1,6 +1,6 @@
 // apps/web/src/components/pos/PaymentModal.tsx
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PaymentMethod } from "@/types";
@@ -18,11 +18,26 @@ type Phase = "idle" | "processing" | "ok" | "fail";
 
 const QR_PATTERN = [1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,1,0,1,1,0,1,0,0,1,0,0,0,1,0,0,1,0,1,1,1,1];
 
+function paymentErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return "Payment failed — please retry";
+}
+
+async function pollOrderPaid(orderId: string, maxAttempts = 15): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const res = await api.get(`/orders/${orderId}/balance`);
+    if (res.data.status === "PAID" || res.data.dueCents === 0) return true;
+  }
+  return false;
+}
+
 export function PaymentModal({ method, orderId, totalCents, amountCents, onClose, onSuccess }: Props) {
   const chargeCents = amountCents ?? totalCents;
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState("");
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const pollingRef = useRef(false);
 
   const fmt = (c: number) => `€${(c / 100).toFixed(2)}`;
 
@@ -36,25 +51,61 @@ export function PaymentModal({ method, orderId, totalCents, amountCents, onClose
     if (method === "paypal") {
       api.post("/payments/paypal/create", { orderId, amountCents: chargeCents })
         .then((r) => { setQrUrl(r.data.approvalUrl); })
-        .catch(() => { setPhase("fail"); setMessage("Failed to create PayPal order"); });
+        .catch((err) => {
+          setPhase("fail");
+          setMessage(paymentErrorMessage(err));
+        });
     }
-  }, [method, orderId]);
+  }, [method, orderId, chargeCents]);
+
+  useEffect(() => {
+    return () => {
+      pollingRef.current = false;
+    };
+  }, []);
+
+  const completeSuccess = () => {
+    setPhase("ok");
+    setMessage("Payment approved — receipt ready");
+    setTimeout(onSuccess, 1200);
+  };
 
   const handleCharge = async () => {
     setPhase("processing");
+    setMessage("");
     try {
       if (method === "card") {
         setMessage("Waiting for card…");
-        await api.post("/payments/stripe/intent", { orderId, readerId: "tmr_simulated", amountCents: chargeCents });
-        setPhase("ok");
-        setMessage("Payment approved — receipt ready");
-        setTimeout(onSuccess, 1200);
+        const res = await api.post("/payments/stripe/intent", {
+          orderId,
+          readerId: "tmr_simulated",
+          amountCents: chargeCents,
+        });
+
+        if (res.data.status === "succeeded") {
+          completeSuccess();
+          return;
+        }
+
+        if (res.data.status === "processing") {
+          setMessage("Confirming payment with card network…");
+          pollingRef.current = true;
+          const paid = await pollOrderPaid(orderId);
+          pollingRef.current = false;
+          if (paid) {
+            completeSuccess();
+            return;
+          }
+          setPhase("fail");
+          setMessage("Payment timed out — check the dashboard or try again");
+          return;
+        }
+
+        completeSuccess();
       } else if (method === "paypal") {
         setMessage("Waiting for customer to approve…");
         await new Promise((r) => setTimeout(r, 2000));
-        setPhase("ok");
-        setMessage("PayPal payment captured — receipt ready");
-        setTimeout(onSuccess, 1200);
+        completeSuccess();
       } else if (method === "cash") {
         await api.post("/payments/cash", { orderId, amountCents: chargeCents });
         setPhase("ok");
@@ -63,11 +114,7 @@ export function PaymentModal({ method, orderId, totalCents, amountCents, onClose
       }
     } catch (err: unknown) {
       setPhase("fail");
-      const msg =
-        err && typeof err === "object" && "response" in err
-          ? String((err as { response?: { data?: { error?: string } } }).response?.data?.error)
-          : "Payment failed — please retry";
-      setMessage(msg || "Payment failed — please retry");
+      setMessage(paymentErrorMessage(err));
     }
   };
 

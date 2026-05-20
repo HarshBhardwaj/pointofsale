@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { enqueueOrder } from "@/lib/offline/queue";
 import { isOfflineCapable } from "@/lib/offline/sync";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { usePosSession } from "@/hooks/usePosSession";
 import { modifierKey, cartVatBreakdown, lineGross } from "@/lib/cartTotals";
 import { computeDiscountCents } from "@/lib/discounts";
 import { computeTipCents } from "@/lib/tips";
@@ -35,22 +36,35 @@ function cartToOrderItems(cart: CartItem[]) {
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedDiscount, setSelectedDiscount] = useState<Discount | null>(null);
   const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState<PaymentMethod | null>(null);
   const [splitModal, setSplitModal] = useState(false);
-  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [orderTotalCents, setOrderTotalCents] = useState<number | null>(null);
-  const [orderCount, setOrderCount] = useState(1);
   const [pickerProduct, setPickerProduct] = useState<Product | null>(null);
-  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
-  const [openTabLabel, setOpenTabLabel] = useState<string | null>(null);
-  const [tipPct, setTipPct] = useState(0);
+
+  const {
+    cart,
+    setCart,
+    selectedDiscount,
+    setSelectedDiscount,
+    tipPct,
+    setTipPct,
+    openOrderId,
+    setOpenOrderId,
+    openTabLabel,
+    setOpenTabLabel,
+    currentOrderId,
+    setCurrentOrderId,
+    orderCount,
+    setOrderCount,
+    clearPersistedSession,
+    sessionReady,
+  } = usePosSession(products, discounts, !loading);
 
   const { isOnline, pendingCount, syncing, refresh, sync } = useOfflineSync();
 
   useEffect(() => {
+    if (!sessionReady) return;
     const { grandTotal } = cartVatBreakdown(cart);
     const discountCents = selectedDiscount ? computeDiscountCents(grandTotal, selectedDiscount) : 0;
     const subtotalAfterDiscount = Math.round(grandTotal - discountCents);
@@ -74,7 +88,7 @@ export default function POSPage() {
     } else {
       api.post("/display/push", payload).catch(() => {});
     }
-  }, [cart, selectedDiscount, tipPct]);
+  }, [cart, selectedDiscount, tipPct, sessionReady]);
 
   useEffect(() => {
     Promise.all([
@@ -121,7 +135,27 @@ export default function POSPage() {
     );
   };
 
+  const cancelCheckoutOrder = async (orderId: string) => {
+    try {
+      await api.patch(`/orders/${orderId}/cancel`);
+    } catch {
+      // ignore — order may already be paid or cancelled
+    }
+  };
+
+  const resetCheckoutSession = () => {
+    setPayModal(null);
+    setSplitModal(false);
+    setCurrentOrderId(null);
+    setOrderTotalCents(null);
+  };
+
   const clearCart = () => {
+    if (currentOrderId && !openOrderId) {
+      void cancelCheckoutOrder(currentOrderId);
+    }
+    resetCheckoutSession();
+    clearPersistedSession();
     setCart([]);
     setSelectedDiscount(null);
     setOpenOrderId(null);
@@ -197,14 +231,22 @@ export default function POSPage() {
     const { grandTotal } = cartVatBreakdown(cart);
     const discountCents = selectedDiscount ? computeDiscountCents(grandTotal, selectedDiscount) : 0;
     const tipCents = computeTipCents(Math.round(grandTotal - discountCents), tipPct);
-    if (openOrderId) {
-      const res = await api.patch(`/orders/${openOrderId}`, {
-        items,
-        discountId: selectedDiscount?.id ?? null,
-        tipCents,
-      });
-      return res.data;
+    const patchPayload = {
+      items,
+      discountId: selectedDiscount?.id ?? null,
+      tipCents,
+    };
+
+    const orderIdToReuse = openOrderId ?? currentOrderId;
+    if (orderIdToReuse) {
+      try {
+        const res = await api.patch(`/orders/${orderIdToReuse}`, patchPayload);
+        return res.data;
+      } catch {
+        if (!openOrderId) resetCheckoutSession();
+      }
     }
+
     const res = await api.post("/orders", {
       locationId: LOCATION_ID,
       channel: "POS",
@@ -264,13 +306,23 @@ export default function POSPage() {
   };
 
   const handlePaymentSuccess = () => {
-    setPayModal(null);
-    setSplitModal(false);
-    setCurrentOrderId(null);
-    setOrderTotalCents(null);
-    clearCart();
+    resetCheckoutSession();
+    clearPersistedSession();
+    setOpenOrderId(null);
+    setOpenTabLabel(null);
+    setCart([]);
+    setSelectedDiscount(null);
+    setTipPct(0);
     setOrderCount((n) => n + 1);
     toast.success("Payment successful — receipt ready");
+  };
+
+  const closePaymentModal = () => {
+    setPayModal(null);
+  };
+
+  const closeSplitModal = () => {
+    setSplitModal(false);
   };
 
   return (
@@ -317,11 +369,7 @@ export default function POSPage() {
         <SplitPaymentModal
           orderId={currentOrderId}
           totalCents={orderTotalCents}
-          onClose={() => {
-            setSplitModal(false);
-            setCurrentOrderId(null);
-            setOrderTotalCents(null);
-          }}
+          onClose={closeSplitModal}
           onSuccess={handlePaymentSuccess}
         />
       )}
@@ -330,11 +378,7 @@ export default function POSPage() {
           method={payModal}
           orderId={currentOrderId}
           totalCents={orderTotalCents}
-          onClose={() => {
-            setPayModal(null);
-            setCurrentOrderId(null);
-            setOrderTotalCents(null);
-          }}
+          onClose={closePaymentModal}
           onSuccess={handlePaymentSuccess}
         />
       )}

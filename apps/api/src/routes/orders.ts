@@ -69,11 +69,31 @@ function applyDiscount(
 // ── GET /api/orders ── list orders for a location ───────────────────────
 ordersRouter.get("/", async (req: Request, res: Response) => {
   try {
-    const { locationId, status, limit = "50", offset = "0" } = req.query;
+    const { locationId, status, limit = "50", offset = "0", from, to } = req.query;
+    const fromDate = from ? new Date(String(from)) : undefined;
+    const toDate = to ? new Date(String(to)) : undefined;
+
+    const dateFilter =
+      fromDate && toDate
+        ? {
+            OR: [
+              { completedAt: { gte: fromDate, lte: toDate } },
+              {
+                AND: [
+                  { completedAt: null },
+                  { createdAt: { gte: fromDate, lte: toDate } },
+                ],
+              },
+            ],
+          }
+        : {};
+
     const orders = await prisma.order.findMany({
       where: {
+        merchantId: "merchant_01",
         ...(locationId && { locationId: String(locationId) }),
         ...(status && { status: String(status) as any }),
+        ...dateFilter,
       },
       include: {
         items: { include: { product: true, modifiers: true } },
@@ -231,13 +251,32 @@ ordersRouter.post("/", async (req: Request, res: Response) => {
   }
 });
 
-// ── PATCH /api/orders/:id ── update open tab items ───────────────────────
+const UPDATABLE_ORDER_STATUSES = ["OPEN", "PENDING", "AWAITING_PAYMENT"] as const;
+
+// ── PATCH /api/orders/:id ── update open tab or in-checkout order ────────
 ordersRouter.patch("/:id", async (req: Request, res: Response) => {
   try {
     const body = UpdateOpenOrderSchema.parse(req.body);
     const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Order not found" });
-    if (existing.status !== "OPEN") return res.status(400).json({ error: "Only open tabs can be updated" });
+    if (!UPDATABLE_ORDER_STATUSES.includes(existing.status as (typeof UPDATABLE_ORDER_STATUSES)[number])) {
+      return res.status(400).json({ error: "Order cannot be updated" });
+    }
+
+    const isCheckoutOrder = existing.status === "PENDING" || existing.status === "AWAITING_PAYMENT";
+    if (isCheckoutOrder) {
+      await prisma.payment.updateMany({
+        where: {
+          orderId: req.params.id,
+          status: { in: ["PENDING", "PROCESSING", "REQUIRES_ACTION"] },
+        },
+        data: { status: "CANCELLED" },
+      });
+      await prisma.qrPaymentLink.updateMany({
+        where: { orderId: req.params.id, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      });
+    }
 
     const built = await buildOrderItemsData(body.items);
     const grossTotal = built.subtotalCents + built.taxCents;
@@ -285,6 +324,7 @@ ordersRouter.patch("/:id", async (req: Request, res: Response) => {
         discountName,
         discountType,
         discountCents,
+        status: isCheckoutOrder ? "PENDING" : existing.status,
         tabName: body.tabName ?? existing.tabName,
         items: { create: built.itemsData },
       },
@@ -297,9 +337,27 @@ ordersRouter.patch("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ── PATCH /api/orders/:id/cancel ──────────────────────────────────────────
+// ── PATCH /api/orders/:id/cancel ── abandon unpaid checkout ───────────────
 ordersRouter.patch("/:id/cancel", async (req: Request, res: Response) => {
   try {
+    const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Order not found" });
+    if (!["PENDING", "AWAITING_PAYMENT"].includes(existing.status)) {
+      return res.status(400).json({ error: "Only unpaid checkout orders can be cancelled" });
+    }
+
+    await prisma.payment.updateMany({
+      where: {
+        orderId: req.params.id,
+        status: { in: ["PENDING", "PROCESSING", "REQUIRES_ACTION"] },
+      },
+      data: { status: "CANCELLED" },
+    });
+    await prisma.qrPaymentLink.updateMany({
+      where: { orderId: req.params.id, status: "ACTIVE" },
+      data: { status: "CANCELLED" },
+    });
+
     const order = await prisma.order.update({
       where: { id: req.params.id },
       data: { status: "CANCELLED" },

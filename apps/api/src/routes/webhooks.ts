@@ -8,6 +8,7 @@ import { capturePayPalOrder } from "../services/paypal";
 import { finishFiskalyTransaction } from "../services/fiskaly";
 import { logger } from "../lib/logger";
 import { markOrderPaid } from "../services/order";
+import { resetOrderForRetry } from "../lib/paymentFailure";
 import { v4 as uuidv4 } from "uuid";
 
 export const webhooksRouter = Router();
@@ -95,10 +96,7 @@ webhooksRouter.post(
                 failureMessage: intent.last_payment_error?.message,
               },
             });
-            await prisma.order.update({
-              where: { id: payment.orderId },
-              data: { status: "FAILED" },
-            });
+            await resetOrderForRetry(payment.orderId);
           }
           logger.warn("Stripe payment failed", { intentId: intent.id });
           break;
