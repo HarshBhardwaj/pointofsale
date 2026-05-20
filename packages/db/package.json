@@ -5,8 +5,8 @@
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
   },
   "scripts": {
-    "migrate": "prisma migrate dev",
-    "migrate:prod": "prisma migrate deploy",
+    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "migrate:prod": "dotenv -e ../../.env -- prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
     "studio": "prisma studio",
     "generate": "prisma generate"
@@ -15,6 +15,7 @@
     "@prisma/client": "^5.14.0"
   },
   "devDependencies": {
+    "dotenv-cli": "^7.4.2",
     "prisma": "^5.14.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"

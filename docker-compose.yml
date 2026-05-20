@@ -6,6 +6,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-truckpos}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-truckpos}
       POSTGRES_DB: ${POSTGRES_DB:-truckpos}
+    # Host 5433 avoids clashing with a local PostgreSQL on 5432
+    ports:
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -8,6 +8,7 @@
     "build": "npm run generate --workspace=packages/db && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "lint": "npm run lint --workspaces",
     "db:migrate": "npm run migrate --workspace=packages/db",
+    "db:migrate:deploy": "npm run migrate:prod --workspace=packages/db",
     "db:seed": "npm run seed --workspace=packages/db",
     "db:studio": "npm run studio --workspace=packages/db"
   },
